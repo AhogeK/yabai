@@ -1,5 +1,25 @@
-/bin
-/tests/bin
-/archive
+# Build outputs
+/bin/
+/tests/bin/
+/archive/
+
+# macOS
+.DS_Store
+.DS_Store?
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Clangd
+.clangd/
+
+# Logs
+*.log
+/tmp/
+
+# OSAX
 /src/osax/loader_bin.c
 /src/osax/payload_bin.c
