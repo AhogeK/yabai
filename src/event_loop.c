@@ -36,8 +36,7 @@ static void window_did_receive_focus(struct window_manager *wm, struct mouse_sta
         window_manager_set_window_opacity(wm, focused_window, g_window_manager.normal_window_opacity);
     }
 
-    float opacity = window->opacity != 0.0f ? window->opacity : wm->active_window_opacity;
-    window_manager_set_opacity(wm, window, opacity);
+    window_manager_set_window_opacity(wm, window, wm->active_window_opacity);
 
     if (wm->focused_window_id != window->id) {
         if (ms->ffm_window_id != window->id) {
