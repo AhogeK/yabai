@@ -23,3 +23,12 @@
 # OSAX
 /src/osax/loader_bin.c
 /src/osax/payload_bin.c
+
+# AI Engineering - potential generated content
+.opencode/node_modules/
+.agents/node_modules/
+node_modules/
+
+# Temporary files
+*.tmp
+*.temp

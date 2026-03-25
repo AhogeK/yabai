@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "skills": {
+    "design": {
+      "source": "rshankras/claude-code-apple-skills",
+      "sourceType": "github",
+      "computedHash": "09a095a1550f225e9264633931cc3c7d027ab2d09ecf5dcbc7e14f4c3cc15461"
+    },
+    "macos-development": {
+      "source": "rshankras/claude-code-apple-skills",
+      "sourceType": "github",
+      "computedHash": "ff7fba1c081a1efb29e67526abc4e281fbb482f10e2b364f11fbbe85c2d34e05"
+    },
+    "security": {
+      "source": "rshankras/claude-code-apple-skills",
+      "sourceType": "github",
+      "computedHash": "0630926283229a4393f89e893f3654922499d92315b3cf5409189f502d53e63d"
+    },
+    "shared": {
+      "source": "rshankras/claude-code-apple-skills",
+      "sourceType": "github",
+      "computedHash": "4da29b40afc5ed49cb257218fe856920b368cbc3d21a26c6c566db14f528e46f"
+    }
+  }
+}
