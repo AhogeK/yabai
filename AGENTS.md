@@ -6,12 +6,25 @@
 
 ### R1: Session Initialization
 
-On every session start, immediately read all files under `memory-bank/`.
+On every session start, immediately read:
+1. `AGENTS.md` - Project rules and constraints (MUST READ FIRST)
+2. All files under `memory-bank/` - Current state and progress
 Create from template if missing.
 
-### R2: Memory Update (Enforced)
+### R2: Memory Read Before Action (Enforced)
 
-#### Trigger Mapping
+**BEFORE any code modification or task execution:**
+1. Read `AGENTS.md` to understand rules and constraints
+2. Read `memory-bank/activeContext.md` to understand current state
+3. Read `memory-bank/progress.md` to check ongoing work
+4. Only then proceed with the action
+
+**AFTER any code modification:**
+1. Immediately update `memory-bank/activeContext.md` with specific changes
+2. Update `memory-bank/progress.md` if task status changed
+3. Run `git diff --stat` to verify recorded changes match actual changes
+
+**Memory Update Trigger Mapping:**
 
 | Trigger              | Update File         | Content                          |
 |----------------------|---------------------|----------------------------------|
@@ -24,10 +37,12 @@ Create from template if missing.
 
 #### Update Format
 ```
-- [YYYY-MM-DD] - Change Title
+- [YYYY-MM-DD HH:MM] - Change Title
   - File: specific modification
   - Impact: business/system impact
 ```
+
+**Verification**: After each session, confirm memory files accurately reflect git diff.
 
 ### R3: System-Level Red Lines（系统级红线）
 
@@ -123,11 +138,17 @@ Flow: document problem → add/modify rule → record in activeContext.md → aw
 ## Execution Flow
 
 ```
-Session start → Read memory-bank/ → Create todo (if needed)
+Session start → Read AGENTS.md (R1) → Read memory-bank/ (R1) → Create todo (if needed)
 ↓
-Process request → Clean temp files → Update memory (R2)
+BEFORE action: Read AGENTS.md + activeContext.md + progress.md (R2)
 ↓
-Check line counts (R12) → Prune if needed → Output summary
+Process request → Modify code
+↓
+AFTER modification: Update activeContext.md + progress.md (R2)
+↓
+Verify: git diff --stat matches memory records
+↓
+Clean temp files → Check line counts (R12) → Prune if needed → Output summary
 ```
 
 ## Memory Bank Structure

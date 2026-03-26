@@ -10,6 +10,7 @@
 #include <objc/runtime.h>
 
 #include <CoreGraphics/CoreGraphics.h>
+#include <notify.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
@@ -23,8 +24,32 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <time.h>
 
 #include "common.h"
+
+// File-based debug logging (supports ObjC %@ format)
+static FILE *debug_log_file = NULL;
+static void debug_log(NSString *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    NSString *msg = [[NSString alloc] initWithFormat:fmt arguments:args];
+    va_end(args);
+    
+    // Write to file
+    if (!debug_log_file) {
+        debug_log_file = fopen("/tmp/yabai-sa-debug.log", "a");
+    }
+    if (debug_log_file) {
+        time_t now = time(NULL);
+        struct tm *t = localtime(&now);
+        fprintf(debug_log_file, "[%02d:%02d:%02d] %s\n", t->tm_hour, t->tm_min, t->tm_sec, [msg UTF8String]);
+        fflush(debug_log_file);
+    }
+    
+    // Also log to NSLog for Console.app
+    NSLog(@"[yabai-sa] %@", msg);
+}
 
 #ifdef __x86_64__
 #include "x64_payload.m"
@@ -42,6 +67,20 @@
 #define lerp(a, t, b) (((1.0-t)*a) + (t*b))
 
 extern int SLSMainConnectionID(void);
+
+// SkyLight space creation APIs
+typedef uint64_t CGSSpaceID;
+typedef int CGSConnectionID;
+typedef uint32_t CGDirectDisplayID;
+extern CGSSpaceID CGSSpaceCreate(CGSConnectionID cid, CGDirectDisplayID display_id, CFDictionaryRef options);
+extern void CGSSpaceDestroy(CGSConnectionID cid, CGSSpaceID sid);
+extern CGError CGSSpaceSetType(CGSConnectionID cid, CGSSpaceID sid, int type);
+extern int CGSSpaceGetType(CGSConnectionID cid, CGSSpaceID sid);
+#define kCGSSpaceUser 0
+
+// Display UUID to ID conversion
+extern uint32_t CGDisplayGetDisplayIDFromUUID(CFUUIDRef uuid);
+
 extern CGError SLSGetConnectionPSN(int cid, ProcessSerialNumber *psn);
 extern CGError SLSGetWindowAlpha(int cid, uint32_t wid, float *alpha);
 extern CGError SLSSetWindowAlpha(int cid, uint32_t wid, float alpha);
@@ -541,18 +580,109 @@ static void do_space_destroy(char *message)
 
 static void do_space_create(char *message)
 {
-    if (dock_spaces == nil || add_space_fp == 0) return;
+    if (dock_spaces == nil) {
+        debug_log(@"ERROR: dock_spaces is nil");
+        return;
+    }
 
     uint64_t space_id;
     unpack(space_id);
 
-    CFStringRef __block display_uuid = SLSCopyManagedDisplayForSpace(SLSMainConnectionID(), space_id);
+    CFStringRef display_uuid = SLSCopyManagedDisplayForSpace(SLSMainConnectionID(), space_id);
+    if (!display_uuid) {
+        debug_log(@"ERROR: display_uuid is NULL");
+        return;
+    }
+    
+    debug_log(@"space_id=%llu display_uuid=%@", space_id, display_uuid);
+    
     dispatch_sync(dispatch_get_main_queue(), ^{
+        // Get display_space for the target display
+        id display_space = display_space_for_display_uuid(display_uuid);
+        if (!display_space) {
+            debug_log(@"ERROR: display_space is nil");
+            CFRelease(display_uuid);
+            return;
+        }
+        
+        debug_log(@"display_space=%@", display_space);
+        
+        // Create ManagedSpace - this internally calls CGSSpaceCreate
         id new_space = macOSSequoia
                      ? [[objc_getClass("ManagedSpace") alloc] init]
                      : [[objc_getClass("Dock.ManagedSpace") alloc] init];
-        id display_space = display_space_for_display_uuid(display_uuid);
-        asm__call_add_space(new_space, display_space, add_space_fp);
+        
+        if (!new_space) {
+            debug_log(@"ERROR: Failed to create ManagedSpace");
+            CFRelease(display_uuid);
+            return;
+        }
+        
+        uint64_t new_spid = get_space_id(new_space);
+        debug_log(@"new_space=%@ spid=%llu", new_space, new_spid);
+        
+        // ====== 【正确方案】直接操作 _ContiguousArrayStorage buffer ======
+        // arm64 上不使用 tagged bit，slot 直接存储 buffer 指针
+        
+        uint8_t *ds_raw = (uint8_t *)(__bridge void *)display_space;
+        uintptr_t *buffer_slot = (uintptr_t *)(ds_raw + 56);
+        uintptr_t old_buffer = *buffer_slot;
+        
+        if (old_buffer == 0) {
+            debug_log(@"ERROR: old_buffer is NULL");
+            CFRelease(display_uuid);
+            return;
+        }
+        
+        // _ContiguousArrayStorage 内存布局:
+        //   +0:  isa (8B)
+        //   +8:  refCounts (8B)  
+        //   +16: count (8B)
+        //   +24: capacity (8B)
+        //   +32: elements start
+        
+        int64_t old_count = *(int64_t *)(old_buffer + 16);
+        int64_t capacity = *(int64_t *)(old_buffer + 24);
+        
+        debug_log(@"old_buffer=%p count=%lld capacity=%lld", (void *)old_buffer, old_count, capacity);
+        
+        // 检查是否有足够容量
+        if (old_count + 1 > capacity) {
+            debug_log(@"ERROR: capacity exceeded (need %lld, have %lld)", old_count + 1, capacity);
+            CFRelease(display_uuid);
+            return;
+        }
+        
+        // ====== 方案：直接在现有 buffer 上追加（利用预留容量） ======
+        // 不分配新 buffer，直接写入新 element 到 offset 32 + old_count * 8
+        // 然后更新 count
+        
+        uintptr_t *elements = (uintptr_t *)(old_buffer + 32);
+        
+        // Retain 新 space（防止被释放）
+        CFRetain((__bridge CFTypeRef)new_space);
+        
+        // 写入新 element
+        elements[old_count] = (uintptr_t)(__bridge void *)new_space;
+        
+        // 更新 count（需要原子操作？先试试直接写）
+        *(int64_t *)(old_buffer + 16) = old_count + 1;
+        
+        debug_log(@"Appended space at index %lld, new count=%lld", old_count, old_count + 1);
+        
+        // 通知 WindowServer 展示新 space
+        CGSConnectionID cid = SLSMainConnectionID();
+        CGSSpaceSetType(cid, new_spid, kCGSSpaceUser);
+        SLSShowSpaces(cid, (__bridge CFArrayRef)@[@(new_spid)]);
+        
+        // 通知 Mission Control 刷新
+        [[NSDistributedNotificationCenter defaultCenter]
+            postNotificationName:@"com.apple.spaces.changed"
+                          object:nil
+                        userInfo:nil
+              deliverImmediately:YES];
+        
+        debug_log(@"Space creation complete: spid=%llu", new_spid);
         CFRelease(display_uuid);
     });
 }
