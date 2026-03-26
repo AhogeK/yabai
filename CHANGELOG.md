@@ -7,6 +7,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## [Unreleased]
 ### Changed
 - Validate scripting-addition socket message length to prevent possbility of stack corruption [#2751](https://github.com/asmvik/yabai/issues/2751)
+- Fix space creation on macOS 26.4 Tahoe by directly manipulating Swift Array buffer and registering spaces in com.apple.spaces plist
 
 ## [7.1.17] - 2026-02-21
 ### Changed
