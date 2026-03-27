@@ -10,7 +10,6 @@
 #include <objc/runtime.h>
 
 #include <CoreGraphics/CoreGraphics.h>
-#include <notify.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
@@ -24,32 +23,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#include <time.h>
 
 #include "common.h"
-
-// File-based debug logging (supports ObjC %@ format)
-static FILE *debug_log_file = NULL;
-static void debug_log(NSString *fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-    NSString *msg = [[NSString alloc] initWithFormat:fmt arguments:args];
-    va_end(args);
-    
-    // Write to file
-    if (!debug_log_file) {
-        debug_log_file = fopen("/tmp/yabai-sa-debug.log", "a");
-    }
-    if (debug_log_file) {
-        time_t now = time(NULL);
-        struct tm *t = localtime(&now);
-        fprintf(debug_log_file, "[%02d:%02d:%02d] %s\n", t->tm_hour, t->tm_min, t->tm_sec, [msg UTF8String]);
-        fflush(debug_log_file);
-    }
-    
-    // Also log to NSLog for Console.app
-    NSLog(@"[yabai-sa] %@", msg);
-}
 
 #ifdef __x86_64__
 #include "x64_payload.m"
@@ -66,59 +41,7 @@ static void debug_log(NSString *fmt, ...) {
 #define unpack(v) memcpy(&v, message, sizeof(v)); message += sizeof(v)
 #define lerp(a, t, b) (((1.0-t)*a) + (t*b))
 
-// Helper Category: NSDictionary/NSArray deep mutable copy
-@interface NSDictionary (DeepMutableCopy)
-- (NSMutableDictionary *)mutableDeepCopy;
-@end
-@implementation NSDictionary (DeepMutableCopy)
-- (NSMutableDictionary *)mutableDeepCopy {
-    NSMutableDictionary *ret = [NSMutableDictionary dictionaryWithCapacity:self.count];
-    for (id key in self) {
-        id val = self[key];
-        if ([val isKindOfClass:[NSDictionary class]])
-            ret[key] = [(NSDictionary *)val mutableDeepCopy];
-        else if ([val isKindOfClass:[NSArray class]])
-            ret[key] = [(NSArray *)val mutableDeepCopy];
-        else
-            ret[key] = val;
-    }
-    return ret;
-}
-@end
-
-@interface NSArray (DeepMutableCopy)
-- (NSMutableArray *)mutableDeepCopy;
-@end
-@implementation NSArray (DeepMutableCopy)
-- (NSMutableArray *)mutableDeepCopy {
-    NSMutableArray *ret = [NSMutableArray arrayWithCapacity:self.count];
-    for (id val in self) {
-        if ([val isKindOfClass:[NSDictionary class]])
-            [ret addObject:[(NSDictionary *)val mutableDeepCopy]];
-        else if ([val isKindOfClass:[NSArray class]])
-            [ret addObject:[(NSArray *)val mutableDeepCopy]];
-        else
-            [ret addObject:val];
-    }
-    return ret;
-}
-@end
-
 extern int SLSMainConnectionID(void);
-
-// SkyLight space creation APIs
-typedef uint64_t CGSSpaceID;
-typedef int CGSConnectionID;
-typedef uint32_t CGDirectDisplayID;
-extern CGSSpaceID CGSSpaceCreate(CGSConnectionID cid, CGDirectDisplayID display_id, CFDictionaryRef options);
-extern void CGSSpaceDestroy(CGSConnectionID cid, CGSSpaceID sid);
-extern CGError CGSSpaceSetType(CGSConnectionID cid, CGSSpaceID sid, int type);
-extern int CGSSpaceGetType(CGSConnectionID cid, CGSSpaceID sid);
-#define kCGSSpaceUser 0
-
-// Display UUID to ID conversion
-extern uint32_t CGDisplayGetDisplayIDFromUUID(CFUUIDRef uuid);
-
 extern CGError SLSGetConnectionPSN(int cid, ProcessSerialNumber *psn);
 extern CGError SLSGetWindowAlpha(int cid, uint32_t wid, float *alpha);
 extern CGError SLSSetWindowAlpha(int cid, uint32_t wid, float alpha);
@@ -616,237 +539,20 @@ static void do_space_destroy(char *message)
     CFRelease(display_uuid);
 }
 
-// Helper function: write to com.apple.spaces plist for WindowServer to recognize new space
-static void register_space_in_plist(NSString *space_uuid,
-                                    uint64_t managed_space_id,
-                                    NSString *display_identifier,
-                                    uint32_t wallpaper_wid)
-{
-    // com.apple.spaces is managed by cfprefsd, must use CFPreferences to write
-    CFStringRef domain = CFSTR("com.apple.spaces");
-
-    // Read full plist
-    CFPropertyListRef raw = CFPreferencesCopyAppValue(
-        CFSTR("SpacesDisplayConfiguration"), domain);
-    if (!raw) {
-        NSLog(@"[yabai-sa] register_space_in_plist: failed to read SpacesDisplayConfiguration");
-        return;
-    }
-
-    // Deep copy to mutable structure
-    NSMutableDictionary *root = [((__bridge NSDictionary *)raw) mutableDeepCopy];
-    CFRelease(raw);
-    if (!root) return;
-
-    NSMutableDictionary *mgmt = [root[@"Management Data"] mutableDeepCopy];
-    root[@"Management Data"] = mgmt;
-
-    // Step 1: Insert new space into the corresponding display's Spaces array
-    NSMutableArray *monitors = [[mgmt[@"Monitors"] mutableCopy] autorelease];
-    mgmt[@"Monitors"] = monitors;
-
-    for (NSUInteger i = 0; i < monitors.count; i++) {
-        NSMutableDictionary *monitor = [[monitors[i] mutableCopy] autorelease];
-        NSString *disp_id = monitor[@"Display Identifier"];
-        if (![disp_id isEqualToString:display_identifier]) continue;
-
-        NSMutableArray *spaces = [[monitor[@"Spaces"] mutableCopy] autorelease];
-        if (!spaces) spaces = [NSMutableArray array];
-
-        NSDictionary *new_entry = @{
-            @"ManagedSpaceID": @(managed_space_id),
-            @"id64":           @(managed_space_id),
-            @"type":           @(0),
-            @"uuid":           space_uuid
-        };
-        [spaces addObject:new_entry];
-        monitor[@"Spaces"] = spaces;
-        monitors[i] = monitor;
-        NSLog(@"[yabai-sa] register_space_in_plist: inserted into Monitors[%lu] display=%@",
-              (unsigned long)i, disp_id);
-        break;
-    }
-
-    // Step 2: Append to Space Properties array with name+windows
-    NSMutableArray *space_props = [[root[@"Space Properties"] mutableCopy] autorelease];
-    if (!space_props) space_props = [NSMutableArray array];
-
-    NSArray *windows_arr = wallpaper_wid ? @[@(wallpaper_wid)] : @[];
-    [space_props addObject:@{ @"name": space_uuid, @"windows": windows_arr }];
-    root[@"Space Properties"] = space_props;
-
-    // Write back to plist
-    CFPreferencesSetAppValue(
-        CFSTR("SpacesDisplayConfiguration"),
-        (__bridge CFPropertyListRef)root,
-        domain);
-    CFPreferencesAppSynchronize(domain);
-
-    NSLog(@"[yabai-sa] register_space_in_plist: written uuid=%@ spid=%llu display=%@ wid=%u",
-          space_uuid, managed_space_id, display_identifier, wallpaper_wid);
-}
-
 static void do_space_create(char *message)
 {
-    if (dock_spaces == nil) {
-        debug_log(@"ERROR: dock_spaces is nil");
-        return;
-    }
+    if (dock_spaces == nil || add_space_fp == 0) return;
 
     uint64_t space_id;
     unpack(space_id);
 
-    CFStringRef display_uuid = SLSCopyManagedDisplayForSpace(SLSMainConnectionID(), space_id);
-    if (!display_uuid) {
-        debug_log(@"ERROR: display_uuid is NULL");
-        return;
-    }
-    
-    debug_log(@"space_id=%llu display_uuid=%@", space_id, display_uuid);
-    
+    CFStringRef __block display_uuid = SLSCopyManagedDisplayForSpace(SLSMainConnectionID(), space_id);
     dispatch_sync(dispatch_get_main_queue(), ^{
-        // Get display_space for the target display
-        id display_space = display_space_for_display_uuid(display_uuid);
-        if (!display_space) {
-            debug_log(@"ERROR: display_space is nil");
-            CFRelease(display_uuid);
-            return;
-        }
-        
-        debug_log(@"display_space=%@", display_space);
-        
-        // Create ManagedSpace - this internally calls CGSSpaceCreate
         id new_space = macOSSequoia
                      ? [[objc_getClass("ManagedSpace") alloc] init]
                      : [[objc_getClass("Dock.ManagedSpace") alloc] init];
-        
-        if (!new_space) {
-            debug_log(@"ERROR: Failed to create ManagedSpace");
-            CFRelease(display_uuid);
-            return;
-        }
-        
-        uint64_t new_spid = get_space_id(new_space);
-        debug_log(@"new_space=%@ spid=%llu", new_space, new_spid);
-        
-        // Correct approach: directly manipulate _ContiguousArrayStorage buffer
-        // arm64 does not use tagged bit, slot directly stores buffer pointer
-        
-        uint8_t *ds_raw = (uint8_t *)(__bridge void *)display_space;
-        uintptr_t *buffer_slot = (uintptr_t *)(ds_raw + 56);
-        uintptr_t old_buffer = *buffer_slot;
-        
-        if (old_buffer == 0) {
-            debug_log(@"ERROR: old_buffer is NULL");
-            CFRelease(display_uuid);
-            return;
-        }
-        
-        // _ContiguousArrayStorage memory layout:
-        //   +0:  isa (8B)
-        //   +8:  refCounts (8B)
-        //   +16: count (8B)
-        //   +24: capacity (8B)
-        //   +32: elements start
-        
-        int64_t old_count = *(int64_t *)(old_buffer + 16);
-        int64_t capacity = *(int64_t *)(old_buffer + 24);
-        
-        debug_log(@"old_buffer=%p count=%lld capacity=%lld", (void *)old_buffer, old_count, capacity);
-        
-        // Check if there's enough capacity
-        if (old_count + 1 > capacity) {
-            debug_log(@"ERROR: capacity exceeded (need %lld, have %lld)", old_count + 1, capacity);
-            CFRelease(display_uuid);
-            return;
-        }
-        
-        // Approach: append directly to existing buffer (using reserved capacity)
-        // No new buffer allocation, write new element to offset 32 + old_count * 8
-        // Then update count
-        
-        uintptr_t *elements = (uintptr_t *)(old_buffer + 32);
-        
-        // Retain new space (prevent deallocation)
-        CFRetain((__bridge CFTypeRef)new_space);
-
-        // Write new element
-        elements[old_count] = (uintptr_t)(__bridge void *)new_space;
-
-        // Update count (thread safety: direct write for now)
-        *(int64_t *)(old_buffer + 16) = old_count + 1;
-
-        debug_log(@"Appended space at index %lld, new count=%lld", old_count, old_count + 1);
-
-        // Write to com.apple.spaces plist to register new space
-        // Get space_uuid
-        NSString *space_uuid = ((NSString *(*)(id, SEL)) objc_msgSend)(new_space, @selector(uuid));
-        debug_log(@"space_uuid=%@", space_uuid);
-        
-        // 找 display_identifier：遍历 plist monitors，看哪个 Spaces 里有 current space 的 uuid
-        NSString *display_identifier = nil;
-        {
-            CFPropertyListRef raw = CFPreferencesCopyAppValue(
-                CFSTR("SpacesDisplayConfiguration"), CFSTR("com.apple.spaces"));
-            if (raw) {
-                NSDictionary *root = (__bridge NSDictionary *)raw;
-                NSArray *monitors = root[@"Management Data"][@"Monitors"];
-                for (NSDictionary *mon in monitors) {
-                    NSString *disp = mon[@"Display Identifier"];
-                    for (NSDictionary *sp in mon[@"Spaces"]) {
-                        if ([sp[@"id64"] unsignedLongLongValue] == space_id) {
-                            display_identifier = disp;
-                            break;
-                        }
-                    }
-                    if (display_identifier) break;
-                }
-                CFRelease(raw);
-            }
-        }
-        
-        if (!display_identifier) {
-            // fallback: use "Main" for primary display
-            display_identifier = @"Main";
-            debug_log(@"WARNING: display_identifier not found, using 'Main' as fallback");
-        }
-        
-        debug_log(@"display_identifier=%@", display_identifier);
-        
-        // Get wallpaper window wid
-        uint32_t wallpaper_wid = 0;
-        // Try to get shared wallpaper window ID from existing spaces
-        {
-            CFPropertyListRef raw = CFPreferencesCopyAppValue(
-                CFSTR("SpacesDisplayConfiguration"), CFSTR("com.apple.spaces"));
-            if (raw) {
-                NSDictionary *root = (__bridge NSDictionary *)raw;
-                NSArray *space_props = root[@"Space Properties"];
-                for (NSDictionary *sp in space_props) {
-                    NSArray *windows = sp[@"windows"];
-                    if (windows.count > 0) {
-                        wallpaper_wid = (uint32_t)[windows[0] unsignedIntValue];
-                        break;
-                    }
-                }
-                CFRelease(raw);
-            }
-        }
-        
-        debug_log(@"wallpaper_wid=%u", wallpaper_wid);
-        
-        // Write to plist
-        register_space_in_plist(space_uuid, new_spid, display_identifier, wallpaper_wid);
-        
-        // Notify WindowServer to show new space
-        CGSConnectionID cid = SLSMainConnectionID();
-        CGSSpaceSetType(cid, new_spid, kCGSSpaceUser);
-        SLSShowSpaces(cid, (__bridge CFArrayRef)@[@(new_spid)]);
-        
-        // Notify WindowServer to reload spaces configuration
-        notify_post("com.apple.spaces.settings.changed");
-        
-        debug_log(@"Space creation complete: spid=%llu", new_spid);
+        id display_space = display_space_for_display_uuid(display_uuid);
+        asm__call_add_space(new_space, display_space, add_space_fp);
         CFRelease(display_uuid);
     });
 }

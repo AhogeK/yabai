@@ -1,7 +1,5 @@
-// addSpace: x20 = display_space, x21 = ManagedSpace
-// Based on reverse engineering: function expects both registers
 #define asm__call_add_space(v0,v1,func) \
-    __asm__("mov x20, %0\nmov x21, %1\n" : :"r"(v0), "r"(v1) :"x20", "x21"); ((void (*)())(func))();
+    __asm__("mov x0, %0\n""mov x20, %1\n" : :"r"(v0), "r"(v1) :"x0", "x20"); ((void (*)())(func))();
 
 #define asm__call_move_space(v0,v1,v2,v3,func) \
     __asm__("mov x0, %0\n""mov x1, %1\n""mov x2, %2\n""mov x20, %3\n" : :"r"(v0), "r"(v1), "r"(v2), "r"(v3) :"x0", "x1", "x2", "x20"); ((void (*)())(func))();
@@ -176,7 +174,7 @@ const char *get_fix_animation_pattern(NSOperatingSystemVersion os_version) {
 
 const char *get_add_space_pattern(NSOperatingSystemVersion os_version) {
     if (os_version.majorVersion == 26) {
-        return "7F 23 03 D5 FF C3 01 D1 E1 03 1E AA ?? ?? 00 94 FE 03 01 AA FD 7B 06 A9 FD 83 01 91";
+        return "7F 23 03 D5 FF C3 01 D1 E1 03 1E AA ?? ?? 00 94 FE 03 01 AA FD 7B 06 A9 FD 83 01 91 F3 03";
     } else if (os_version.majorVersion == 15) {
         return "7F 23 03 D5 FF C3 01 D1 E1 03 1E AA ?? ?? 00 94 FE 03 01 AA FD 7B 06 A9 FD 83 01 91 F3 03";
     } else if (os_version.majorVersion == 14) {
