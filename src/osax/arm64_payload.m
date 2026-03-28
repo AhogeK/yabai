@@ -1,5 +1,19 @@
+// macOS 15 and below: addSpace takes (x0=new_space, x20=display_space)
+// x20 is callee-saved, Dock function reads it internally
 #define asm__call_add_space(v0,v1,func) \
     __asm__("mov x0, %0\n""mov x20, %1\n" : :"r"(v0), "r"(v1) :"x0", "x20"); ((void (*)())(func))();
+
+// macOS 26 Tahoe: space_create_entry(display_id, Spaces_self)
+// Swift calling convention: self in x20, first arg in x0
+// Confirmed via LLDB Frame1 disassembly:
+//   <+88>: mov x20, x0   (x0 = retained Spaces singleton)
+//   <+92>: mov x0, x23   (x23 = display_id = 1)
+//   <+96>: bl  0x1f07d8
+#define asm__call_space_create_tahoe(display_id, spaces_self, func) \
+    __asm__("mov w0, %w0\n""mov x20, %1\n" \
+        : :"r"((int32_t)(display_id)), "r"((uintptr_t)(spaces_self)) \
+        :"w0", "x20"); \
+    ((void (*)())(func))()
 
 #define asm__call_move_space(v0,v1,v2,v3,func) \
     __asm__("mov x0, %0\n""mov x1, %1\n""mov x2, %2\n""mov x20, %3\n" : :"r"(v0), "r"(v1), "r"(v2), "r"(v3) :"x0", "x1", "x2", "x20"); ((void (*)())(func))();
@@ -174,7 +188,11 @@ const char *get_fix_animation_pattern(NSOperatingSystemVersion os_version) {
 
 const char *get_add_space_pattern(NSOperatingSystemVersion os_version) {
     if (os_version.majorVersion == 26) {
-        return "7F 23 03 D5 FF C3 01 D1 E1 03 1E AA ?? ?? 00 94 FE 03 01 AA FD 7B 06 A9 FD 83 01 91 F3 03";
+        // macOS 26 Tahoe: Binary layout changed significantly.
+        // The raw function pointer path is unreliable - pattern may match wrong address.
+        // We use the ObjC message path (DPPM addSpace:forDisplayUUID:) instead.
+        // Return NULL to signal payload.m to skip the raw function pointer call.
+        return NULL;
     } else if (os_version.majorVersion == 15) {
         return "7F 23 03 D5 FF C3 01 D1 E1 03 1E AA ?? ?? 00 94 FE 03 01 AA FD 7B 06 A9 FD 83 01 91 F3 03";
     } else if (os_version.majorVersion == 14) {
@@ -237,5 +255,24 @@ const char *get_set_front_window_pattern(NSOperatingSystemVersion os_version) {
         return "7F 23 03 D5 FF ?? 02 D1 F6 57 ?? A9 F4 4F ?? A9 FD 7B ?? A9 FD ?? 02 91 ?? 1A 00 ?? 08 ?? 44 F9 08 01 40 F9 A8 83 1D F8 ?? ?? 00 ?? ?? ?? ?? ?? ?? 03 ?? AA ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 00 ?? ?? ?? 00 ?? ?? ?? 00 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? E8 ?? 06 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? 00 ?? ?? ?? 00 ?? ?? ?? ?? ?? ?? ?? ?? ??";
     }
 
+    return NULL;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// macOS 26 Tahoe: Space Creation Entry Point (0x1f07d8)
+// Identified via dynamic analysis call stack from addSpace:forDisplayUUID: hook
+// This is the top-level entry that allocates the new space object
+// ═══════════════════════════════════════════════════════════════════════════════
+
+uint64_t get_space_create_entry_offset(NSOperatingSystemVersion os_version) {
+    if (os_version.majorVersion == 26) {
+        return 0x1f07d8;  // Direct offset, no pattern needed
+    }
+    return 0;
+}
+
+const char *get_space_create_entry_pattern(NSOperatingSystemVersion os_version) {
+    // Return NULL - we use direct offset instead of pattern matching
+    // The offset 0x1f07d8 was confirmed via dynamic analysis call stack
     return NULL;
 }

@@ -2,65 +2,91 @@
 
 ## Current Work Focus
 
-**macOS 26.4 Space Creation Bug** - 利用现有 buffer 预留容量追加元素
+**macOS 26 Space Creation - Phase 30: 代码和文档库已完全净化**
 
-## Recent Changes
+---
 
-- [2026-03-26 19:55] - 诊断发现 arm64 不使用 tagged bit
-  - Files: src/osax/payload.m:620-690
-  - Finding: `raw slot value = 0x973321bc0` (末尾是 0，不是 tagged)
-  - Finding: `class=_TtGCs23_ContiguousArrayStoragePs9AnyObject__$`
-  - Finding: `field@16=5 field@24=17` (count=5, capacity=17)
-  - Impact: tagged pointer 方案完全错误，arm64 直接存 buffer 指针
+## ✅ 代码清理完成 (2026-03-29 00:05)
 
-- [2026-03-26 19:52] - 利用现有 buffer 预留容量追加元素
-  - Files: src/osax/payload.m:620-690
-  - Change: 不分配新 buffer，直接在预留空间追加
-  - Reason: 避免分配新内存导致的 isa/refCounts 问题
-  - Method: `elements[old_count] = new_space; *(count_ptr) = old_count + 1;`
+**已删除** (~592 行)：
+- 所有 `debug_log()` 调用
+- 所有 `NSLog` 调试语句
+- 所有 `hooked_` 函数
+- 所有 hook 基础设施
+- `attempt_eager_manager_capture()`
+- `get_wallpaper_manager_for_create()`
+- 所有 wallpaper manager hooks
+- 所有 space creation entry hooks
+- 所有 notification hooks
+- `/tmp/yabai-sa-debug.log` 写入代码
 
-- [2026-03-26 19:45] - tagged pointer 方案（已废弃）
-  - Files: src/osax/payload.m:620-690
-  - Change: `tagged = (NSArray*) | 0x1`
-  - Result: Mission Control 打开时 Dock 崩溃
-  - Reason: arm64 不使用 tagged bit，Swift 读到错误指针
+**文件变化**：
+- `payload.m`: 1858 行 → 1266 行
+- `arm64_payload.m`: 保留核心宏定义
+- `makefile`: 删除 `-framework AppKit`
 
-- [2026-03-26 19:30] - 实现 Swift Array buffer 直接操作
-  - Files: src/osax/payload.m:581-710
-  - Change: 放弃 addSpace 函数调用，直接操作 DisplaySpaces 的 Swift Array buffer
-  - Reason: `_ContiguousArrayStorage` 是不可变的，不支持 addObject
-  - Method: 读取 offset=56 的 buffer 指针，构造新 buffer，追加新元素，写回指针
+## ✅ 文档清理完成 (2026-03-29 00:15)
 
-## Current Diff Status
+**已删除** (13 个文件)：
+- `lldb-output.txt`, `02-static-analysis.md`, `04-experiment-log.md`
+- `all-lldb-debug-log.txt`, `architect-review-2026-03-28.md`
+- `architect-review-request-2026-03-27.md`, `dtrace-space-precise.d`
+- `dynamic-analysis-report-2026-03-28.md`, `LLDB-GUIDE.md`
+- `OPERATING-GUIDE.md`, `plan-static-analysis-add-space.md`
+- `space_debug.lldb`, `space-creation-impasse-analysis-report.md`
+- `static-analysis-report-2026-03-28.md`
 
+**保留** (核心分析文档)：
+- ✅ `lldb-analysis.md` (74KB - 完整 LLDB 分析)
+- ✅ `lldb-analysis2.md` (10KB - 第二次 LLDB 会话)
+
+**构建结果**：✅ 编译成功，无警告
+
+---
+
+## Phase Status
+
+| Phase | 状态 | 结果 |
+|-------|------|------|
+| Phase 1-3 | ✅ COMPLETE | 代码实现完成 |
+| Phase 25-27 | ✅ COMPLETE | 清理完成 |
+| Phase 28 | ⏳ PENDING | 等待用户测试 |
+
+---
+
+## 待用户执行
+
+**根据 AGENTS.md R3，AI 禁止自动重启 yabai**
+
+```bash
+# 1. 重启 yabai
+yabai --restart-service
+
+# 2. 等待 5 秒
+sleep 5
+
+# 3. 测试 space 创建
+yabai -m space --create
+
+# 4. 验证 Mission Control 中出现新 space
 ```
-AGENTS.md: +35 -0 (R1/R2 强化)
-memory-bank/: +83 行 (记录更新)
-src/osax/payload.m: +138 -2
-  - do_space_create: 利用现有 buffer 预留容量追加
-  - 添加诊断日志
-src/osax/arm64_payload.m: +6 -0
-  - asm__call_add_space 宏（已不使用）
-```
 
-## Key Findings (From Reverse Engineering)
+---
 
-1. **Swift Array Buffer ABI (arm64)**:
-   - slot 直接存储 `_ContiguousArrayStorage*` 指针
-   - **不使用 tagged bit**（与 x86_64 不同）
-   - 内存布局：`+0:isa, +8:refCounts, +16:count, +24:capacity, +32:elements`
+## 关键函数偏移 (macOS 26.4 Tahoe)
 
-2. **预留容量**:
-   - `capacity=17`，当前只有 3-5 个 spaces
-   - 可以直接在预留空间追加，不需要分配新 buffer
+| 偏移 | 功能 | 状态 |
+|------|------|------|
+| `0x1f07d8` | 顶层创建入口 | 已实现，待验证 |
+| `0x1eb33c` | 数组遍历 | 已确认 |
+| `0x285564` | 空间处理 + CGS | 已确认 |
+| `0x19e150` | DPPM 壁纸创建 | 已确认 |
 
-3. **Ghost Space 原因**:
-   - 手动操作 Swift Array buffer 没有触发 Dock 内部初始化
-   - 必须调用 add_space_fp 来正确注册 space
+---
 
-## Next Steps
+## 相关文件
 
-1. 用户测试：`sudo make install-osax && yabai --restart-service`
-2. 测试：`yabai -m space --create`
-3. 检查日志：`cat /tmp/yabai-sa-debug.log`
-4. 验证 Mission Control 是否崩溃
+- `src/osax/payload.m` - 主 payload
+- `src/osax/arm64_payload.m` - 偏移定义
+- `docs/macos26/lldb-analysis.md` - LLDB 分析
+- `docs/macos26/lldb-analysis2.md` - 第二次 LLDB 会话

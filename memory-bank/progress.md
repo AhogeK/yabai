@@ -1,58 +1,83 @@
 # Progress - yabai
 
-## In Progress
+## Current Phase: macOS 26 Space Creation - Phase 28 (等待用户测试)
 
-- [2026-03-26 19:55] macOS 26.4 Space Creation Fix - 等待用户测试
-  - 诊断发现 arm64 不使用 tagged bit
-  - 利用现有 buffer 预留容量追加元素
-  - 问题：tagged pointer 方案导致 Dock 崩溃
+---
+
+## Phase History
+
+### Phase 1-3: 分析与实现 ✅ COMPLETE
+
+- **Phase 1**: 静态分析 - 5 个函数偏移 (0x1f07d8, 0x1eb33c, 0x285564, 0x143e1c, 0x19e150)
+- **Phase 2**: 动态分析 - 捕获调用链 `0x1f07d8 → 0x143e1c → 0x1eb33c → 0x285564`
+- **Phase 2.5**: 架构决策 - 选择选项 A2 修正版 (直接调用 0x1f07d8)
+- **Phase 2.6**: Hook 实现 - 添加 `get_space_create_entry_offset()`
+- **Phase 2.7**: 验证 x0 参数 - 直接调用方案实现
+- **Phase 3**: 完整实现 - `do_space_create_macos26()` 调用 0x1f07d8
+
+### Phase 3.1: 类型错误修复 ✅ COMPLETE (2026-03-28 17:53)
+
+- **问题**: 传递全局 `Spaces` 单例导致 Dock 崩溃
+- **修复**: 使用 `display_space_for_display_uuid()` 获取 per-display 实例
+- **文件**: `src/osax/payload.m` lines 1584-1606
+
+### Phase 4: 最终验证 ❌ FAILED → Phase 28
+
+- 多次尝试传递不同参数类型均崩溃
+- 根本原因分析进行中
+
+### Phase 25-27: 清理 ✅ COMPLETE (2026-03-29)
+
+- **Phase 25**: 删除 `-framework AppKit`, 编译成功
+- **Phase 26**: 删除所有调试代码 (debug_log, NSLog, hooked_ 函数)
+- **Phase 27**: 删除 13 个过时文档，保留 lldb-analysis.md
+
+### Phase 28: 重新测试 ⏳ PENDING
+
+- [ ] `sudo make install`
+- [ ] `yabai --restart-service`
+- [ ] `yabai -m space --create` 测试
+- [ ] 验证 Mission Control 中出现新 space
+
+---
+
+## Key Findings
+
+### 架构分离 (macOS 26)
+
+```
+"+" 按钮 → 0x1f07d8 (顶层入口, 分配对象)
+         → 0x143e1c (内部: 数组追加 + CGS 注册)
+         → 0x1eb33c (遍历 display spaces)
+         → 0x285564 (CGSMoveManagedSpaceToDisplayIndex)
+         → addSpace:forDisplayUUID: (壁纸创建)
+```
+
+### 关键发现
+
+- `0x1f07d8` 是 Swift 方法，需要 `Spaces` 单例作为 self
+- 传递错误的类型会导致 Dock 崩溃
+- 调用顶层入口应自动触发结构和视觉两层
+
+---
 
 ## Completed
 
-- [2026-03-26 19:55] 诊断 Swift Array ABI
-  - 发现 arm64 直接存 buffer 指针，不使用 tagged bit
-  - 发现 capacity=17，有足够预留空间
-  - Files: src/osax/payload.m:620-690
+- [2026-03-29] **Phase 25-27: 代码和文档清理**
+  - 删除 592 行调试代码
+  - 删除 13 个过时文档
+  - 编译成功，无警告
 
-- [2026-03-26 19:52] 利用现有 buffer 预留容量方案
-  - 不分配新 buffer，直接在预留空间追加
-  - 避免分配新内存导致的 isa/refCounts 问题
-  - Files: src/osax/payload.m:620-690
+- [2026-03-28] **Phase 3.1: 类型错误修复**
+  - 使用 display_space_for_display_uuid() 获取正确实例
+  - 编译通过
 
-- [2026-03-26 19:45] tagged pointer 方案（失败）
-  - 尝试 `tagged = (NSArray*) | 0x1`
-  - 结果：Mission Control 打开时 Dock 崩溃
-  - 原因：arm64 不使用 tagged bit
+- [2026-03-28] **Phase 2.7+3: 直接函数调用实现**
+  - 函数指针直接调用 (BLR 寄存器，无距离限制)
+  - 文件: src/osax/payload.m
 
-- [2026-03-26 19:30] Swift Array buffer 直接操作方案
-  - 放弃 addSpace 函数调用（不可变 Swift Array）
-  - 直接操作 DisplaySpaces offset=56 的 buffer 指针
-  - Files: src/osax/payload.m:581-710
-
-- [2026-03-26 19:09] 简化 do_space_create 函数
-  - 移除手动操作 Swift Array buffer 的代码
-  - 恢复 `asm__call_add_space(new_space, add_space_fp)` 调用
-  - Files: src/osax/payload.m:581-620
-
-- [2026-03-26] macOS 26.4 addSpace 逆向分析
-  - 确认 addSpace 函数签名变化
-  - x21 = ManagedSpace 参数
-  - x20 从全局变量加载（不是参数）
-  - 移除 pattern 末尾的 `F3 03`
-
-- [2026-03-26] macOS 26.4 Tahoe Space Creation Fix - 初步
-  - Updated addSpace byte pattern in arm64_payload.m (30→32 bytes)
-  - Build passes: `make clean && make`
-
-- [2025-03-25] AI Engineering Infrastructure Setup
-  - Created AGENTS.md (139 lines) - behavioral constraints, red lines
-  - Created memory-bank/ (5 files) - project memory persistence
-  - Created .opencode/commands/ (2 files) - /boot and /save commands
-
-## Backlog
-
-_(No backlog items yet)_
+---
 
 ## Blocked
 
-_(No blocked items)_
+- Phase 28 等待用户手动测试 (AGENTS.md R3: AI 禁止自动重启 yabai)

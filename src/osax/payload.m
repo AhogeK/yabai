@@ -85,6 +85,7 @@ static uint64_t remove_space_fp;
 static uint64_t move_space_fp;
 static uint64_t set_front_window_fp;
 static uint64_t animation_time_addr;
+static uint64_t space_create_entry_fp;
 static bool macOSSequoia;
 
 static pthread_t daemon_thread;
@@ -391,6 +392,22 @@ static void init_instances()
             NSLog(@"[yabai-sa] animation_time_addr vm_protect failed; unable to patch instruction!");
         }
     }
+
+#ifdef __arm64__
+    // macOS 26: Initialize space_create_entry_fp for direct call to 0x1f07d8
+    if (os_version.majorVersion >= 26) {
+        uint64_t space_create_offset = get_space_create_entry_offset(os_version);
+        if (space_create_offset != 0) {
+            uint64_t space_create_addr = baseaddr + space_create_offset;
+            NSLog(@"[yabai-sa] (0x%llx) space_create_entry found at 0x%llX (offset 0x%llx)",
+                  baseaddr, space_create_addr, space_create_offset);
+            space_create_entry_fp = space_create_addr;
+        } else {
+            space_create_entry_fp = 0;
+            NSLog(@"[yabai-sa] No space_create_entry offset for macOS %ld", (long)os_version.majorVersion);
+        }
+    }
+#endif
 }
 
 static inline id get_ivar_value(id instance, const char *name)
@@ -541,18 +558,55 @@ static void do_space_destroy(char *message)
 
 static void do_space_create(char *message)
 {
-    if (dock_spaces == nil || add_space_fp == 0) return;
+    if (dock_spaces == nil) return;
 
     uint64_t space_id;
     unpack(space_id);
 
     CFStringRef __block display_uuid = SLSCopyManagedDisplayForSpace(SLSMainConnectionID(), space_id);
+    if (!display_uuid) return;
+
+#ifdef __arm64__
+    // macOS 26: Use direct call to space_create_entry (0x1f07d8)
+    if (macOSSequoia && space_create_entry_fp != 0) {
+        uint64_t base_addr = static_base_address();
+        uint64_t image_slide_val = image_slide();
+        uint64_t space_create_addr = base_addr + image_slide_val + 0x1f07d8ULL;
+
+        // Read Spaces singleton from global variable (file offset 0x488028)
+        uintptr_t spaces_global_ptr = base_addr + image_slide_val + 0x488028ULL;
+        id spaces_singleton = *(id *)spaces_global_ptr;
+
+        if (!spaces_singleton) {
+            CFRelease(display_uuid);
+            return;
+        }
+
+        CGDirectDisplayID display_id = CGMainDisplayID();
+
+        dispatch_sync(dispatch_get_main_queue(), ^{
+            asm__call_space_create_tahoe(display_id, spaces_singleton, space_create_addr);
+        });
+
+        CFRelease(display_uuid);
+        return;
+    }
+#endif
+
+    // Original path (macOS 15 and below)
+    if (add_space_fp == 0) {
+        CFRelease(display_uuid);
+        return;
+    }
+
     dispatch_sync(dispatch_get_main_queue(), ^{
         id new_space = macOSSequoia
                      ? [[objc_getClass("ManagedSpace") alloc] init]
                      : [[objc_getClass("Dock.ManagedSpace") alloc] init];
         id display_space = display_space_for_display_uuid(display_uuid);
+
         asm__call_add_space(new_space, display_space, add_space_fp);
+
         CFRelease(display_uuid);
     });
 }

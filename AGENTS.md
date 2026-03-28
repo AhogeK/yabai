@@ -2,6 +2,8 @@
 
 > Maintained by AI. Do not edit manually.
 
+**所有的修改行为，逻辑决策，思考方向之类的内容都要所有记录，让AI的行为不管在任何session，不管是否被压缩都能可回溯**
+
 ## Core Rules
 
 ### R1: Session Initialization

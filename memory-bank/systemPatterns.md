@@ -28,7 +28,6 @@ SkyLight Observer → Callback → State Update → Client Notification
 - Path: `/tmp/yabai_<user>.socket`
 - Format: `<command> [args...]`
 - Response: JSON or plain text
-- Backward compatibility required
 
 ## Memory Management
 
@@ -42,3 +41,19 @@ SkyLight Observer → Callback → State Update → Client Notification
 2. Build `loader.m` → binary blob
 3. Embed via `xxd -i` → `*_bin.c` files
 4. Runtime: inject into Dock.app via Mach ports
+
+## macOS 26 Space Creation
+
+### Call Chain
+
+```
+"+" 按钮 → 0x1f07d8 (顶层入口)
+         → 0x143e1c (数组追加 + CGS)
+         → 0x285564 (CGSMoveManagedSpaceToDisplayIndex)
+         → addSpace:forDisplayUUID: (壁纸)
+```
+
+### Key Classes
+
+- `DisplaySpaces._spaces`: Swift Array，需要追加新 space
+- `DockCore.WallpaperAgentDesktopPictureManager`: 壁纸窗口
