@@ -9,11 +9,26 @@
 //   <+88>: mov x20, x0   (x0 = retained Spaces singleton)
 //   <+92>: mov x0, x23   (x23 = display_id = 1)
 //   <+96>: bl  0x1f07d8
-#define asm__call_space_create_tahoe(display_id, spaces_self, func) \
-    __asm__("mov w0, %w0\n""mov x20, %1\n" \
-        : :"r"((int32_t)(display_id)), "r"((uintptr_t)(spaces_self)) \
-        :"w0", "x20"); \
-    ((void (*)())(func))()
+//
+// Atomic asm block: set x0/x20 and call in one instruction sequence.
+// Compiler cannot insert instructions between them.
+// x0 = display_id (int32_t), x20 = Spaces singleton (Swift self)
+// x20 is callee-saved - must be restored after call to avoid corrupting caller.
+#define asm__call_space_create_tahoe(display_id, spaces_self, func)     \
+    do {                                                                  \
+        __asm__ volatile (                                                \
+            "mov w0, %w[did]\n"                                          \
+            "mov x20, %[self]\n"                                         \
+            "blr %[fp]\n"                                                \
+            :                                                            \
+            : [did]  "r" ((uint32_t)(display_id)),                       \
+              [self] "r" ((uintptr_t)(spaces_self)),                     \
+              [fp]   "r" ((uintptr_t)(func))                            \
+            : "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7",         \
+              "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15",    \
+              "x16", "x17", "x19", "x20", "x30", "memory"              \
+        );                                                               \
+    } while(0)
 
 #define asm__call_move_space(v0,v1,v2,v3,func) \
     __asm__("mov x0, %0\n""mov x1, %1\n""mov x2, %2\n""mov x20, %3\n" : :"r"(v0), "r"(v1), "r"(v2), "r"(v3) :"x0", "x1", "x2", "x20"); ((void (*)())(func))();

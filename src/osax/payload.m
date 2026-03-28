@@ -567,27 +567,41 @@ static void do_space_create(char *message)
     if (!display_uuid) return;
 
 #ifdef __arm64__
-    // macOS 26: Use direct call to space_create_entry (0x1f07d8)
+    // macOS 26 Tahoe: direct call to space_create_entry
+    // Swift calling convention: x0 = display_id (int32_t), x20 = Spaces singleton (self)
     if (macOSSequoia && space_create_entry_fp != 0) {
-        uint64_t base_addr = static_base_address();
-        uint64_t image_slide_val = image_slide();
-        uint64_t space_create_addr = base_addr + image_slide_val + 0x1f07d8ULL;
+        // Use pre-computed function pointer from init_instances
+        uint64_t space_create_addr = space_create_entry_fp;
 
-        // Read Spaces singleton from global variable (file offset 0x488028)
-        uintptr_t spaces_global_ptr = base_addr + image_slide_val + 0x488028ULL;
+        // Read Spaces singleton: file offset 0x488028, confirmed via LLDB adrp/add decode
+        uint64_t baseaddr = static_base_address() + image_slide();
+        uintptr_t spaces_global_ptr = baseaddr + 0x488028ULL;
         id spaces_singleton = *(id *)spaces_global_ptr;
 
+        NSLog(@"[yabai-sa][SPACE] singleton=%p func=0x%llx",
+              (void *)spaces_singleton, space_create_addr);
+
         if (!spaces_singleton) {
+            NSLog(@"[yabai-sa][SPACE] ERROR: Spaces singleton is nil, aborting");
             CFRelease(display_uuid);
             return;
         }
 
+        // Mirror what Frame1 does: retain before call, release after
+        // Native: <+84>: bl objc_retain  <+88>: mov x20, x0
+        id retained = [spaces_singleton retain];
         CGDirectDisplayID display_id = CGMainDisplayID();
 
+        NSLog(@"[yabai-sa][SPACE] calling space_create_entry(display_id=%u) retained=%p",
+              display_id, (void *)retained);
+
         dispatch_sync(dispatch_get_main_queue(), ^{
-            asm__call_space_create_tahoe(display_id, spaces_singleton, space_create_addr);
+            asm__call_space_create_tahoe((uint32_t)display_id, retained, space_create_addr);
         });
 
+        [retained release];
+
+        NSLog(@"[yabai-sa][SPACE] space_create_entry returned");
         CFRelease(display_uuid);
         return;
     }

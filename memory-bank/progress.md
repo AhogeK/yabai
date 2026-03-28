@@ -32,12 +32,74 @@
 - **Phase 26**: 删除所有调试代码 (debug_log, NSLog, hooked_ 函数)
 - **Phase 27**: 删除 13 个过时文档，保留 lldb-analysis.md
 
-### Phase 28: 重新测试 ⏳ PENDING
+### Phase 27.1: Bug 修复 ✅ COMPLETE (2026-03-29 00:30)
 
-- [ ] `sudo make install`
-- [ ] `yabai --restart-service`
-- [ ] `yabai -m space --create` 测试
-- [ ] 验证 Mission Control 中出现新 space
+**修复的问题**：
+1. **地址重复计算** - 改用 `space_create_entry_fp`（已在 `init_instances` 中预计算）
+2. **地址计算错误** - 修复为 `baseaddr + 0x488028`
+3. **缺少诊断日志** - 添加 4 个 NSLog 用于调试
+
+**代码变化**：
+```c
+// 之前（错误）：
+uint64_t space_create_addr = base_addr + image_slide_val + 0x1f07d8ULL;
+
+// 现在（正确）：
+uint64_t space_create_addr = space_create_entry_fp;  // 直接使用预计算的指针
+```
+
+**文件变化**：`payload.m` +14 行，-6 行
+
+### Phase 28: 测试验证 ❌ FAILED (2026-03-29 00:14)
+
+**测试结果**：
+- [x] `spaces_singleton` 读取成功（非 nil）✅
+- [x] 地址计算正确 ✅
+- [ ] **函数内部仍然崩溃** ❌
+
+**新发现**：
+- 原生调用前有 `objc_retain(Spaces 单例)`
+- 当前实现直接传原始指针，没有 retain
+- 可能是崩溃根因
+
+### Phase 29: 宏修复 ✅ COMPLETE (2026-03-29 00:35)
+
+**修复内容**：
+1. ✅ 合并 `asm` + 函数调用为一个原子 `asm volatile` 块
+2. ✅ 使用 `blr` (寄存器间接跳转) 替代 `bl`
+3. ✅ 添加 `objc_retain`/`objc_release` 包裹调用
+4. ✅ 正确的 clobber 列表（所有 caller-saved + x30）
+
+**文件变化**：
+- `arm64_payload.m`: 宏定义重写
+- `payload.m`: 添加 retain/release
+
+**编译结果**：✅ 成功，无警告
+
+### Phase 30: 最终测试验证 ✅ SUCCESS (2026-03-29 01:02)
+
+**历史性突破**：
+```
+[SPACE] singleton=0xc00870480 func=0x104c787d8
+[SPACE] calling space_create_entry(display_id=1) retained=0xc00870480
+[SPACE] space_create_entry returned  ← 第一次成功返回！
+```
+
+**验证结果**：
+- [x] `sudo make install` ✅
+- [x] `yabai --restart-service` ✅
+- [x] `yabai -m space --create` 测试 ✅
+- [x] `space_create_entry returned` 日志出现 ✅
+- [x] Dock 不再崩溃 ✅
+- [x] Mission Control 显示新 space ✅
+
+**技术突破**：
+1. 原子 `asm volatile` 块防止编译器插入指令
+2. 使用 `blr` (寄存器间接跳转) 替代 `bl`
+3. 添加 `objc_retain`/`objc_release` 匹配原生调用
+4. 正确的 clobber 列表（所有 caller-saved + x30）
+
+**这是第一次成功调用 `0x1f07d8` 且 Dock 没有崩溃！** 🎉
 
 ---
 
