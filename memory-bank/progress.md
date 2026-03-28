@@ -101,6 +101,58 @@ uint64_t space_create_addr = space_create_entry_fp;  // 直接使用预计算的
 
 **这是第一次成功调用 `0x1f07d8` 且 Dock 没有崩溃！** 🎉
 
+### Phase 31: 多显示器支持 ⚠️ PARTIAL (2026-03-29 02:00)
+
+**已实现**：
+1. ✅ 添加 `display_id_for_uuid()` 辅助函数
+2. ✅ 使用 `CGGetActiveDisplayList()` 遍历所有显示器
+3. ✅ 使用 `CFEqual()` 匹配 UUID
+
+**问题发现** (2026-03-29 02:30):
+- ❌ `CGDisplayIOServicePort()` 在 Dock 沙箱下返回 `MACH_PORT_NULL`
+- ❌ `IORegistryEntryCreateCFProperty()` 静默失败
+- ❌ 导致永远 fallback 到 `CGMainDisplayID()`（主显示器）
+
+**修复方案**：
+1. 改用 `CGDisplayCreateUUIDFromDisplayID()` (纯 CoreGraphics API，沙箱可用)
+2. 移除 `#include <IOKit/IOKitLib.h>`
+3. 移除 `-framework IOKit`
+
+**修复完成** (2026-03-29 03:00):
+- ✅ 替换为 `CGDisplayCreateUUIDFromDisplayID()` (纯 CoreGraphics API)
+- ✅ 移除 `#include <IOKit/IOKitLib.h>`
+- ✅ 移除 `-framework IOKit`
+- ✅ 添加警告日志用于调试
+
+**编译结果**：✅ 成功，无警告
+
+**待测试**：
+- [ ] 多显示器场景下 space 创建在正确显示器
+- [ ] 单显示器场景正常工作
+- [ ] 提交并推送
+
+### Phase 31: 多显示器支持 ✅ COMPLETE (2026-03-29 01:30)
+
+**实现内容**：
+1. ✅ 添加 `display_id_for_uuid()` 辅助函数 - 使用 IOKit 遍历显示器并匹配 UUID
+2. ✅ 修改 `do_space_create()` 使用 `display_id_for_uuid(display_uuid)` 替代 `CGMainDisplayID()`
+3. ✅ 添加 IOKit framework 到 makefile
+4. ✅ 编译成功，无警告
+
+**技术细节**：
+- 使用 `CGGetActiveDisplayList()` 枚举所有显示器
+- 使用 `CGDisplayIOServicePort()` 获取 IOKit service（已弃用但仍可用）
+- 使用 `IORegistryEntryCreateCFProperty()` 获取 `IODisplayUUID`
+- 使用 `CFEqual()` 比较 UUID 字符串
+- 找不到匹配时回退到 `CGMainDisplayID()`
+
+**文件变化**：
+- `src/osax/payload.m`: +25 行（辅助函数）+ 1 行（include）+ 1 行（函数调用）
+- `makefile`: +1 行（-framework IOKit）
+
+**待测试**：
+- [ ] 多显示器场景测试
+
 ---
 
 ## Key Findings

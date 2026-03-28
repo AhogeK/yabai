@@ -10,6 +10,10 @@
 #include <objc/runtime.h>
 
 #include <CoreGraphics/CoreGraphics.h>
+#include <CoreGraphics/CGDirectDisplay.h>
+
+// CoreGraphics UUID API (works in sandbox)
+extern CFUUIDRef CGDisplayCreateUUIDFromDisplayID(uint32_t did);
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
@@ -556,6 +560,35 @@ static void do_space_destroy(char *message)
     CFRelease(display_uuid);
 }
 
+// Convert display UUID string to CGDirectDisplayID
+// Uses CoreGraphics UUID API (works in Dock sandbox)
+static CGDirectDisplayID display_id_for_uuid(CFStringRef display_uuid)
+{
+    uint32_t display_count = 0;
+    CGGetActiveDisplayList(0, NULL, &display_count);
+    if (display_count == 0) return CGMainDisplayID();
+
+    CGDirectDisplayID displays[display_count];
+    CGGetActiveDisplayList(display_count, displays, &display_count);
+
+    for (uint32_t i = 0; i < display_count; i++) {
+        CFUUIDRef uuid_ref = CGDisplayCreateUUIDFromDisplayID(displays[i]);
+        if (!uuid_ref) continue;
+
+        CFStringRef uuid_str = CFUUIDCreateString(kCFAllocatorDefault, uuid_ref);
+        CFRelease(uuid_ref);
+        if (!uuid_str) continue;
+
+        bool match = CFEqual(uuid_str, display_uuid);
+        CFRelease(uuid_str);
+
+        if (match) return displays[i];
+    }
+
+    NSLog(@"[yabai-sa][SPACE] WARNING: no display matched UUID, falling back to main display");
+    return CGMainDisplayID();
+}
+
 static void do_space_create(char *message)
 {
     if (dock_spaces == nil) return;
@@ -590,7 +623,7 @@ static void do_space_create(char *message)
         // Mirror what Frame1 does: retain before call, release after
         // Native: <+84>: bl objc_retain  <+88>: mov x20, x0
         id retained = [spaces_singleton retain];
-        CGDirectDisplayID display_id = CGMainDisplayID();
+        CGDirectDisplayID display_id = display_id_for_uuid(display_uuid);
 
         NSLog(@"[yabai-sa][SPACE] calling space_create_entry(display_id=%u) retained=%p",
               display_id, (void *)retained);

@@ -2,7 +2,40 @@
 
 ## Current Work Focus
 
-**macOS 26 Space Creation - Phase 30: 代码和文档库已完全净化**
+**macOS 26 Space Creation - Phase 31: 多显示器支持已实现**
+
+---
+
+## ✅ 多显示器支持实现 (2026-03-29 02:00)
+
+**添加的功能**：
+- `display_id_for_uuid()` 辅助函数 - 使用 IOKit 遍历显示器并匹配 UUID
+- 修改 `do_space_create()` 使用 `display_id_for_uuid(display_uuid)` 替代 `CGMainDisplayID()`
+
+**问题发现** (2026-03-29 02:30):
+- ❌ IOKit 在 Dock 沙箱下静默返回 `MACH_PORT_NULL`
+- ❌ `CGDisplayIOServicePort()` 不可用
+- ✅ 修复方案：改用 `CGDisplayCreateUUIDFromDisplayID()` (纯 CoreGraphics API)
+
+**技术细节**：
+```c
+// 之前（错误 - IOKit 在沙箱下不可用）：
+io_service_t service = CGDisplayIOServicePort(displays[i]);  // 返回 0
+CFTypeRef uuid_ref = IORegistryEntryCreateCFProperty(...);  // 静默失败
+
+// 现在（正确 - 纯 CoreGraphics API）：
+CFUUIDRef uuid_ref = CGDisplayCreateUUIDFromDisplayID(displays[i]);  // 沙箱可用
+```
+
+**修复完成** (2026-03-29 03:00):
+- ✅ 替换为 `CGDisplayCreateUUIDFromDisplayID()` (纯 CoreGraphics API)
+- ✅ 移除 `#include <IOKit/IOKitLib.h>`
+- ✅ 移除 `-framework IOKit`
+- ✅ 添加警告日志用于调试
+
+**待测试**：
+- 多显示器场景下 space 创建在正确显示器
+- 单显示器场景正常工作
 
 ---
 
@@ -85,6 +118,10 @@
 ✅ Dock 不再崩溃
 ✅ space 创建成功
 ✅ 历史性突破！
+
+**遗留问题** (2026-03-29):
+- ❌ 多显示器支持 - `CGMainDisplayID()` 硬编码，永远创建在主显示器
+- ✅ 修复方案：添加 `display_id_for_uuid()` 辅助函数，遍历显示器匹配 UUID
 
 ```bash
 # 1. 重启 yabai
