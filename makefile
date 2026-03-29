@@ -66,3 +66,43 @@ clean: clean-build
 $(BUILD_PATH)/yabai: $(YABAI_SRC)
 	mkdir -p $(BUILD_PATH)
 	xcrun clang $^ $(BUILD_FLAGS) $(CLI_FLAGS) $(FRAMEWORK_PATH) $(FRAMEWORK) -o $@
+
+# --- 路径定义 ---
+YABAI_BIN_ABS = $(shell pwd)/bin/yabai
+USER_NAME = $(shell whoami)
+
+.PHONY: deploy
+deploy:
+	@echo "🧹 [1/5] 深度清理环境..."
+	-@$(YABAI_BIN_ABS) --stop-service 2>/dev/null || true
+	-@killall yabai 2>/dev/null || true
+	@rm -f /tmp/yabai_$(USER_NAME).lock
+	@rm -f /tmp/yabai_$(USER_NAME).socket
+
+	@echo "🏗️  [2/5] 重新编译并签名..."
+	@$(MAKE) install
+	@codesign -fs - $(YABAI_BIN_ABS)
+
+	@echo "🔑 [3/5] 更新 sudoers 权限..."
+	@NEW_HASH=$$(shasum -a 256 $(YABAI_BIN_ABS) | cut -d " " -f 1); \
+	SUDO_LINE="$(USER_NAME) ALL=(root) NOPASSWD: sha256:$$NEW_HASH $(YABAI_BIN_ABS) --load-sa"; \
+	echo "$$SUDO_LINE" | sudo tee /private/etc/sudoers.d/yabai > /dev/null
+
+	@echo "🚀 [4/5] 尝试点火启动..."
+	@$(YABAI_BIN_ABS) --start-service
+	@sleep 1 # 给系统一点反应时间
+
+	@echo "🔍 [5/5] 权限自检..."
+	@if ! pgrep -x yabai > /dev/null; then \
+		echo "⚠️  检测到权限拦截！正在为您唤起系统设置..."; \
+		open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"; \
+		echo "-------------------------------------------------------"; \
+		echo "👉 请在弹出的窗口中执行以下操作："; \
+		echo "1. 找到列表中的 yabai（如果已存在，请先用 [-] 号删掉再手动添加本项目 bin/yabai）"; \
+		echo "2. 确保勾选开关为 [开启] 状态"; \
+		echo "3. 完成后回到终端，按任意键重试启动..."; \
+		echo "-------------------------------------------------------"; \
+		read; \
+		$(YABAI_BIN_ABS) --start-service; \
+	fi
+	@pgrep -x yabai && echo "✅ 部署完美达成！" || echo "❌ 仍然失败，请检查 /tmp/yabai_$(USER_NAME).err.log"
