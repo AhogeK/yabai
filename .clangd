@@ -1,0 +1,12 @@
+CompileFlags:
+  Add:
+    - "-x"
+    - "objective-c"
+    - "-fno-objc-arc"
+    - "-F/System/Library/PrivateFrameworks"
+    - "-include"
+    - "src/manifest.m"
+    - "-ferror-limit=0"
+
+Diagnostics:
+  Suppress: "*"
