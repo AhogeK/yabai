@@ -177,7 +177,19 @@ uint64_t space_create_addr = space_create_entry_fp;  // 直接使用预计算的
 
 ## Completed
 
-- [2026-03-30 05:20] **实现 FINGERPRINT + OFFSET SKIP 方案** 🚧
+- [2026-03-30 05:30] **实现 CALLER-BASED Search 方案** 🚧
+  - **问题**: HotCorners 搜索找到错误 singleton (offset 0x488010)，应为 0x488028
+  - **根本原因**: HotCorners::_handleEvents 使用 "trigger corner" singleton，不是 SpacesBarWindowController
+  - **修正**:
+    - **CALLER PATTERN**: 搜索 `adrp+add+mov+bl` 序列（调用 addSpace 前的 Caller）
+    - **START OFFSET**: `0x200000`（跳过 HotCorners 区域）
+    - **MOV VALIDATION**: `mov x0, xN` 其中 N 匹配 ADRP dest
+    - **BL VALIDATION**: `bl <objc_retain>` 确保是调用前的 retain
+  - **预期**: 找到正确的 SpacesBarWindowController singleton (offset 0x488028)
+  - **状态**: 已编译，待用户测试
+  - **文件**: `src/osax/payload.m`
+
+- [2026-03-30 05:20] **实现 FINGERPRINT + OFFSET SKIP 方案** 🚧 (已废弃)
   - **问题**: 32 字节签名仍匹配错误函数（offset 0x5e2628），导致 Dock 崩溃
   - **根本原因**: Dock 前 1MB 充满工具函数，很多有相似序言
   - **修正**:
@@ -185,7 +197,7 @@ uint64_t space_create_addr = space_create_entry_fp;  // 直接使用预计算的
     - **BUSINESS FINGERPRINT**: 要求 `ins[6-12]` 包含 `0xb9403260`（`ldr w0, [x19, #0x30]`）
     - **REGISTER VALIDATION**: `adrp_rd == add_rn` 验证
   - **预期**: 偏移 + 序言 + 指纹 + 寄存器验证 = 几乎唯一匹配
-  - **状态**: 已编译，待用户测试
+  - **状态**: 已废弃 - 找到错误 singleton (0x488010)
   - **文件**: `src/osax/payload.m`
 
 - [2026-03-30 05:10] **实现 STRICT 32-byte 签名匹配** 🚧

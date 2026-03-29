@@ -2,29 +2,34 @@
 
 ## Current Work Focus
 
-**HotCorners::_handleEvents FINGERPRINT + OFFSET SKIP 实现 (2026-03-30 05:15)**
+**CALLER-BASED Search 实现 (2026-03-30 05:30)**
 
 ---
 
 ## 📋 最新变更
 
-**问题**: 32-byte 签名仍匹配错误函数（offset 0x5e2628），指令 `0xf00020c8 0x911e4100` 导致 Dock 崩溃
+**问题**: HotCorners::_handleEvents 搜索找到错误 singleton (offset 0x488010)，应为 0x488028
 
-**根因**: Dock binary 前 1MB 区域充满 utility functions，有大量相似 prologue
+**根因**: 当前实现搜索 HotCorners prologue，但 HotCorners 使用 "trigger corner" singleton (0x488010)
+         真正的 Caller 调用 addSpace 时使用 SpacesBarWindowController singleton (0x488028)
 
-**修正**: FINGERPRINT + OFFSET SKIP 方案
+**修正**: CALLER-BASED Search 方案
 
 | 改进点 | 之前 | 之后 |
 |--------|------|------|
-| Start offset | `baseaddr + slide` | `baseaddr + slide + 0x100000` (跳过 1MB) |
-| Fingerprint | None | `0xb9403260` (ldr w0, [x19, #0x30]) |
-| Fingerprint search | N/A | Loop `j=6..12` |
-| Register validation | None | `adrp_rd == add_rn` |
+| Search target | HotCorners::_handleEvents prologue | Caller pattern (adrp+add+mov+bl) |
+| Start offset | `0x100000` | `0x200000` (UI logic section) |
+| Fingerprint | `0xb9403260` (ldr w0, [x19, #0x30]) | `mov x0, xN + bl` sequence |
+| Expected offset | `0x488010` (wrong singleton) | `0x488028` (correct singleton) |
+| Pattern length | 6-12 instructions | Exactly 4 instructions |
 
-**关键改进**:
-- 跳过前 1MB 避免 utility function false positives
-- BUSINESS FINGERPRINT `0xb9403260` 是 HotCorners::_handleEvents 独有
-- ADRP dest register 必须等于 ADD source register
+**Caller Pattern**:
+```
+adrp xN, ...     ; Load singleton page
+add xN, ...      ; Add offset (should result in 0x488028)
+mov x0, xN       ; Move singleton to x0 (argument for objc_retain)
+bl <objc_retain> ; Retain before call
+```
 
 **状态**: ✅ 编译成功，待用户测试
 
