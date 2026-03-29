@@ -177,13 +177,15 @@ uint64_t space_create_addr = space_create_entry_fp;  // 直接使用预计算的
 
 ## Completed
 
-- [2026-03-30 04:50] **修正锚点掩码（支持浮点寄存器 stp）** 🚧
-  - **问题**: 原代码检查通用寄存器掩码 `0xad...`，实际是浮点寄存器 `0x6d...`
-  - **修正**:
-    - 锚点检测改为循环 `j=1..5`，接受 `0xad...`、`0x6d...`、`0xa9...` 任意 stp
-    - 扫描窗口：3MB → 4MB
-    - 内层循环：`i=2..15` → `i=1..20`
-    - 新增验证：`adrp_rd == add_rn`（目标寄存器一致）
+- [2026-03-30 05:10] **实现 STRICT 32-byte 签名匹配** 🚧
+  - **问题**: 之前匹配错误函数（offset 0x610c），导致 Dock 崩溃
+  - **修正**: 使用 Ghidra 分析的精确指令序列作为唯一签名
+    - EXACT: `ins[0]` = `0xd503237f` (pacibsp)
+    - EXACT: `ins[1]` = `0x6dbb23e9` (stp d9, d8, [sp, #-0x50]!)
+    - MASK: `ins[2-5]` = 4 个 stp 指令（x24/x23, x22/x21, x20/x19, x29/x30）
+    - EXACT: `ins[6]` = `0x910103fd` (add x29, sp, #0x40)
+    - EXACT: `ins[7]` = `0xaa0003f3` (mov x19, x0)
+    - 搜索 adrp+add 从 `i=8` 开始（而非 `i=1`）
   - **状态**: 已编译，待用户测试
   - **文件**: `src/osax/payload.m`
 

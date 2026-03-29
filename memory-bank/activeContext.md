@@ -2,6 +2,35 @@
 
 ## Current Work Focus
 
+**HotCorners::_handleEvents 签名匹配修正 (2026-03-30 05:10)**
+
+---
+
+## 📋 最新变更
+
+**问题**: 之前匹配错误函数（offset 0x610c），解码地址 `0x104b15bd8` 导致 Dock 崩溃
+
+**修正**: 使用 STRICT 32-byte 签名匹配
+
+| 指令偏移 | 匹配方式 | 值/掩码 | 说明 |
+|----------|----------|---------|------|
+| `ins[0]` | EXACT | `0xd503237f` | pacibsp |
+| `ins[1]` | EXACT | `0x6dbb23e9` | stp d9, d8, [sp, #-0x50]! |
+| `ins[2]` | MASK | `0xffc0ffff` → `0xa9005ff8` | stp x24, x23 |
+| `ins[3]` | MASK | `0xffc0ffff` → `0xa90057f6` | stp x22, x21 |
+| `ins[4]` | MASK | `0xffc0ffff` → `0xa9004ff4` | stp x20, x19 |
+| `ins[5]` | MASK | `0xffc0ffff` → `0xa9007bfd` | stp x29, x30 |
+| `ins[6]` | EXACT | `0x910103fd` | add x29, sp, #0x40 |
+| `ins[7]` | EXACT | `0xaa0003f3` | mov x19, x0 |
+
+**关键改进**:
+- 搜索 adrp+add 从 `i=8` 开始（而非 `i=1`）
+- 32-byte 签名确保唯一性，避免 false positive
+
+**状态**: ✅ 编译成功，待用户测试
+
+---
+
 **代码审查: ai-base 分支透明度逻辑分析 (2026-03-29)**
 
 ---
