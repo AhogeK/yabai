@@ -177,6 +177,19 @@ uint64_t space_create_addr = space_create_entry_fp;  // 直接使用预计算的
 
 ## Completed
 
+- [2026-03-30 01:49] **同步 ai-base 2dd7f6a 至 dev 分支** ✅
+  - 同步文件：`src/window_manager.c` (dispatch_after 版本)
+  - 新 commit: `6a00185` on dev
+  - 覆盖：之前的 pthread 实现 (ee1d33e)
+  - 实现细节：dispatch_after 主队列重试 10 次 × 0.1s = 1 秒
+  - 推送：`git push --force-with-lease origin dev` ✅
+
+- [2026-03-30 01:40] **回滚错误的 memory-bank 提交** ✅
+  - 错误：误将 AGENTS.md + memory-bank/ 提交到 dev 分支 (commit 3af6e91)
+  - 修复：`git reset --hard ee1d33e` 回滚到 pthread 实现提交
+  - 强制推送：`git push --force-with-lease origin dev` 移除远程错误提交
+  - 结果：dev 分支仅保留代码变更，AI 工程文件仅存在于 ai-base
+
 - [2026-03-29 22:15] **合并核心代码至 dev 分支** (commit: f54b4b1)
   - 合并内容：opacity 优化 + macOS 26 space creation
   - 排除内容：`.agents/`, `.opencode/`, `memory-bank/`, `AGENTS.md`, `docs/`, `skills-lock.json`
