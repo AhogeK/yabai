@@ -53,6 +53,16 @@
 
 ---
 
+## ⚠️ 已知遗留问题 (设计限制/权衡)
+
+| # | 问题 | 严重性 | 说明 | 是否需处理 |
+|---|------|--------|------|-----------|
+| 1 | "同 space 才处理失焦窗口"限制 | 🟡 设计 | `window_space(focused_window->id) == window_space(window->id)` 条件导致跨 space 切换时失焦窗口透明度不恢复。这是原版设计，非本次引入。 | ❌ 保持原样 |
+| 2 | 重试 10 次魔法数字 | 🟡 权衡 | `for (int i = 1; i <= 10; i++)` + `0.1s` = 1秒覆盖。高负载时可能不够。无完美解法（Apple 未暴露相关 API）。 | ❌ 保持原样 |
+| 3 | `window_manager_set_opacity()` 的 0.0f 分支 | 🟢 分离 | 该函数有 `opacity == 0.0f` 时的 fallback 逻辑，与新函数 `window_manager_enforce_rule_opacity()` 路径分离，互不干扰。 | ✅ 已清晰分离 |
+
+---
+
 **macOS 26 Space Creation - Phase 31: 多显示器支持已实现**
 
 ---

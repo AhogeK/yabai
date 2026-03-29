@@ -177,6 +177,18 @@ uint64_t space_create_addr = space_create_entry_fp;  // 直接使用预计算的
 
 ## Completed
 
+- [2026-03-29 22:15] **合并核心代码至 dev 分支** (commit: f54b4b1)
+  - 合并内容：opacity 优化 + macOS 26 space creation
+  - 排除内容：`.agents/`, `.opencode/`, `memory-bank/`, `AGENTS.md`, `docs/`, `skills-lock.json`
+  - 合并文件：`src/event_loop.c`, `src/window_manager.c/h`, `src/osax/*.m/h`, `src/yabai.c`, `scripts/install.sh`, `CHANGELOG.md`
+
+- [2026-03-29] **Opacity 逻辑优化** (commit: ee8cc48)
+  - 新增 `window_manager_enforce_rule_opacity()` 专用函数
+  - 添加 WHY 注释解释 macOS WindowServer alpha 重置行为
+  - 简化 `window_did_receive_focus` 调用路径
+  - 添加 dispatch block 生命周期安全检查
+  - 构建验证通过，无警告
+
 - [2026-03-29] **Phase 25-27: 代码和文档清理**
   - 删除 592 行调试代码
   - 删除 13 个过时文档
