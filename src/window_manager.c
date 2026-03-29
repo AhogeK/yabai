@@ -776,17 +776,7 @@ void window_manager_set_window_opacity(struct window_manager *wm, struct window 
 {
     if (!wm->enable_window_opacity)                 return;
     if (!window_manager_is_window_eligible(window)) return;
-
-    if (window->opacity != 0.0f) {
-        uint32_t wid = window->id;
-        float target_opacity = window->opacity;
-        for (int i = 1; i <= 10; i++) {
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(i * 0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                scripting_addition_set_opacity(wid, target_opacity, 0.0f);
-            });
-        }
-        return;
-    }
+    if (window->opacity != 0.0f)                    return;
 
     window_manager_set_opacity(wm, window, opacity);
 }
