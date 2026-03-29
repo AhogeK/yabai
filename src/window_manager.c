@@ -772,47 +772,18 @@ bool window_manager_set_opacity(struct window_manager *wm, struct window *window
     return scripting_addition_set_opacity(window->id, opacity, wm->window_opacity_duration);
 }
 
-struct opacity_retry_context {
-    uint32_t wid;
-    float target_opacity;
-    int retries;
-};
-
-static void *window_manager_opacity_retry_thread(void *arg)
-{
-    struct opacity_retry_context *ctx = (struct opacity_retry_context *)arg;
-    for (int i = 0; i < ctx->retries; i++) {
-        usleep(20000); // 20ms
-        dispatch_async(dispatch_get_main_queue(), ^{
-            scripting_addition_set_opacity(ctx->wid, ctx->target_opacity, 0.0f);
-        });
-    }
-    free(ctx);
-    return NULL;
-}
-
-static void window_manager_set_window_opacity_with_retry(uint32_t wid, float target_opacity, int retries)
-{
-    struct opacity_retry_context *ctx = malloc(sizeof(struct opacity_retry_context));
-    ctx->wid = wid;
-    ctx->target_opacity = target_opacity;
-    ctx->retries = retries;
-
-    pthread_t thread;
-    pthread_attr_t attr;
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-    pthread_create(&thread, &attr, &window_manager_opacity_retry_thread, ctx);
-    pthread_attr_destroy(&attr);
-}
-
 void window_manager_set_window_opacity(struct window_manager *wm, struct window *window, float opacity)
 {
     if (!wm->enable_window_opacity)                 return;
     if (!window_manager_is_window_eligible(window)) return;
-
     if (window->opacity != 0.0f) {
-        window_manager_set_window_opacity_with_retry(window->id, window->opacity, 5);
+        uint32_t wid = window->id;
+        float target_opacity = window->opacity;
+        for (int i = 1; i <= 10; i++) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(i * 0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                scripting_addition_set_opacity(wid, target_opacity, 0.0f);
+            });
+        }
         return;
     }
 
