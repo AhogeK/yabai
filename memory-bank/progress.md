@@ -177,6 +177,13 @@ uint64_t space_create_addr = space_create_entry_fp;  // 直接使用预计算的
 
 ## Completed
 
+- [2026-03-30 02:25] **清理 commit message 签名** ✅
+  - 移除内容：`Ultraworked with [Sisyphus]...` 和 `Co-authored-by: Sisyphus...`
+  - **master**: 37b25e8, c9a83d5 (原 41a8a8a, f79cd13)
+  - **ai-base**: eefa78e (原 ff2f1b0)
+  - **dev**: 无需清理（已干净）
+  - 推送：`git push --force-with-lease` ✅
+
 - [2026-03-30 02:20] **修正所有分支版本至 7.1.19** ✅
   - **master**: 
     - 回滚到 5821619 (v7.1.18)
