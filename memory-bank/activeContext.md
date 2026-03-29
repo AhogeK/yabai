@@ -2,33 +2,31 @@
 
 ## Current Work Focus
 
-**CALLER-BASED Search 实现 (2026-03-30 05:30)**
+**DOUBLE-ANCHOR Search 实现 (2026-03-30 06:00)**
 
 ---
 
 ## 📋 最新变更
 
-**问题**: HotCorners::_handleEvents 搜索找到错误 singleton (offset 0x488010)，应为 0x488028
+**问题**: CALLER-BASED Search 仍匹配错误 singleton (offset 0x488010)，应为 0x488028
 
-**根因**: 当前实现搜索 HotCorners prologue，但 HotCorners 使用 "trigger corner" singleton (0x488010)
-         真正的 Caller 调用 addSpace 时使用 SpacesBarWindowController singleton (0x488028)
+**根因**: Pattern matching 在复杂 binary 中太宽松，匹配到 Mach-O header string "MUTZ"
 
-**修正**: CALLER-BASED Search 方案
+**修正**: DOUBLE-ANCHOR Search 方案
 
-| 改进点 | 之前 | 之后 |
-|--------|------|------|
-| Search target | HotCorners::_handleEvents prologue | Caller pattern (adrp+add+mov+bl) |
-| Start offset | `0x100000` | `0x200000` (UI logic section) |
-| Fingerprint | `0xb9403260` (ldr w0, [x19, #0x30]) | `mov x0, xN + bl` sequence |
-| Expected offset | `0x488010` (wrong singleton) | `0x488028` (correct singleton) |
-| Pattern length | 6-12 instructions | Exactly 4 instructions |
+| 改进点 | CALLER-BASED | DOUBLE-ANCHOR |
+|--------|--------------|---------------|
+| Search target | Pattern matching (adrp+add+mov+bl) | BL instruction to addSpace |
+| Anchor type | Loose pattern | Absolute address (0x1f07d8) |
+| Backward search | None | Search -1 to -10 for adrp+add |
+| Precision | Medium (matched wrong code) | Extremely high (caller binding) |
+| Expected offset | `0x488010` (wrong) | `0x488028` (correct) |
 
-**Caller Pattern**:
+**Double-Anchor Logic**:
 ```
-adrp xN, ...     ; Load singleton page
-add xN, ...      ; Add offset (should result in 0x488028)
-mov x0, xN       ; Move singleton to x0 (argument for objc_retain)
-bl <objc_retain> ; Retain before call
+1. Search for BL instruction with target = space_create_entry_fp (0x1f07d8)
+2. Once found, search BACKWARDS 10 instructions for nearest adrp+add pair
+3. This pair loads the CORRECT singleton before calling addSpace
 ```
 
 **状态**: ✅ 编译成功，待用户测试

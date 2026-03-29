@@ -177,7 +177,18 @@ uint64_t space_create_addr = space_create_entry_fp;  // 直接使用预计算的
 
 ## Completed
 
-- [2026-03-30 05:30] **实现 CALLER-BASED Search 方案** 🚧
+- [2026-03-30 06:00] **实现 DOUBLE-ANCHOR Search 方案** 🚧
+  - **问题**: CALLER-BASED Search 仍匹配错误 singleton (offset 0x488010)，应为 0x488028
+  - **根本原因**: Pattern matching 在复杂 binary 中太宽松，匹配到 Mach-O header string "MUTZ"
+  - **修正**:
+    - **ANCHOR 1**: 搜索 BL instruction with target = space_create_entry_fp (0x1f07d8)
+    - **ANCHOR 2**: 找到后向后搜索 10 条指令找 nearest adrp+add pair
+    - **PRECISION**: 绝对地址锚点 + 数据使用绑定 = 极高精度
+  - **预期**: 找到正确的 SpacesBarWindowController singleton (offset 0x488028)
+  - **状态**: 已编译，待用户测试
+  - **文件**: `src/osax/payload.m` (+89 行，-2 行)
+
+- [2026-03-30 05:30] **实现 CALLER-BASED Search 方案** 🚧 (已废弃)
   - **问题**: HotCorners 搜索找到错误 singleton (offset 0x488010)，应为 0x488028
   - **根本原因**: HotCorners::_handleEvents 使用 "trigger corner" singleton，不是 SpacesBarWindowController
   - **修正**:
@@ -186,7 +197,7 @@ uint64_t space_create_addr = space_create_entry_fp;  // 直接使用预计算的
     - **MOV VALIDATION**: `mov x0, xN` 其中 N 匹配 ADRP dest
     - **BL VALIDATION**: `bl <objc_retain>` 确保是调用前的 retain
   - **预期**: 找到正确的 SpacesBarWindowController singleton (offset 0x488028)
-  - **状态**: 已编译，待用户测试
+  - **状态**: 已废弃 - 仍匹配错误 singleton
   - **文件**: `src/osax/payload.m`
 
 - [2026-03-30 05:20] **实现 FINGERPRINT + OFFSET SKIP 方案** 🚧 (已废弃)
