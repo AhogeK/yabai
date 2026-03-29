@@ -177,6 +177,13 @@ uint64_t space_create_addr = space_create_entry_fp;  // 直接使用预计算的
 
 ## Completed
 
+- [2026-03-30 02:00] **更新 dev 分支版本至 7.1.19** ✅
+  - CHANGELOG.md: 添加 7.1.19  release note
+  - scripts/install.sh: VERSION="7.1.19"
+  - 新 commit: `bcffff1` chore: bump version to 7.1.19
+  - SA 版本：无需更新（本次无 SA 相关修改）
+  - 推送：`git push -u origin dev` ✅
+
 - [2026-03-30 01:49] **同步 ai-base 2dd7f6a 至 dev 分支** ✅
   - 同步文件：`src/window_manager.c` (dispatch_after 版本)
   - 新 commit: `6a00185` on dev
