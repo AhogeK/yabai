@@ -6,24 +6,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
-## [7.1.21] - 2026-04-13
-### Fixed
-- Add O_CLOEXEC flag to lockfile descriptor to prevent fd inheritance by child processes (fixes lock僵死 on restart) [#2775](https://github.com/asmvik/yabai/issues/2775)
-
-## [7.1.20] - 2026-03-30
-### Added
-- macOS 26 (Tahoe): Dynamic address decoding for Space creation
-- Control-flow fingerprint for DPPM singleton location
-- ADRP+ADD/LDR instruction decoders for runtime address resolution
-
-### Changed
-- Space creation now uses DOUBLE-ANCHOR search with early return
-- DPPM initialization prioritizes behavioral fingerprint over pattern matching
-- asmvik's original logic preserved as fallback
-
 ## [7.1.19] - 2026-03-30
-### Fixed
-- Use dispatch_after retry for first-open window opacity flicker
+### Changed
+- Fix opacity retry logic for first-open window flicker
 
 ## [7.1.18] - 2026-03-29
 ### Changed
