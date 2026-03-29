@@ -177,6 +177,17 @@ uint64_t space_create_addr = space_create_entry_fp;  // 直接使用预计算的
 
 ## Completed
 
+- [2026-03-30 05:20] **实现 FINGERPRINT + OFFSET SKIP 方案** 🚧
+  - **问题**: 32 字节签名仍匹配错误函数（offset 0x5e2628），导致 Dock 崩溃
+  - **根本原因**: Dock 前 1MB 充满工具函数，很多有相似序言
+  - **修正**:
+    - **OFFSET SKIP**: 跳过前 1MB（`0x100000`），从 1MB 处开始搜索
+    - **BUSINESS FINGERPRINT**: 要求 `ins[6-12]` 包含 `0xb9403260`（`ldr w0, [x19, #0x30]`）
+    - **REGISTER VALIDATION**: `adrp_rd == add_rn` 验证
+  - **预期**: 偏移 + 序言 + 指纹 + 寄存器验证 = 几乎唯一匹配
+  - **状态**: 已编译，待用户测试
+  - **文件**: `src/osax/payload.m`
+
 - [2026-03-30 05:10] **实现 STRICT 32-byte 签名匹配** 🚧
   - **问题**: 之前匹配错误函数（offset 0x610c），导致 Dock 崩溃
   - **修正**: 使用 Ghidra 分析的精确指令序列作为唯一签名
