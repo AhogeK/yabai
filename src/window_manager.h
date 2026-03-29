@@ -175,6 +175,7 @@ void window_manager_set_active_window_opacity(struct window_manager *wm, float o
 void window_manager_set_normal_window_opacity(struct window_manager *wm, float opacity);
 void window_manager_set_window_opacity_enabled(struct window_manager *wm, bool enabled);
 bool window_manager_set_opacity(struct window_manager *wm, struct window *window, float opacity);
+void window_manager_enforce_rule_opacity(struct window_manager *wm, struct window *window);
 void window_manager_set_window_opacity(struct window_manager *wm, struct window *window, float opacity);
 void window_manager_set_focus_follows_mouse(struct window_manager *wm, enum ffm_mode mode);
 enum window_op_error window_manager_set_window_insertion(struct space_manager *sm, struct window *window, int direction);

@@ -772,21 +772,36 @@ bool window_manager_set_opacity(struct window_manager *wm, struct window *window
     return scripting_addition_set_opacity(window->id, opacity, wm->window_opacity_duration);
 }
 
+// NOTE(AhogeK): macOS WindowServer resets window alpha to 1.0 when a window receives
+// focus. This is a system behavior that cannot be disabled. When a yabai rules sets
+// a custom opacity (window->opacity != 0.0f), we must re-apply it after focus changes.
+// The retry mechanism (10 attempts at 100ms intervals) counters the async timing
+// of the system reset, which can occur at unpredictable times during the focus event.
+// Rule opacity bypasses the active/normal opacity system entirely - it is a static
+// forced value that takes absolute precedence.
+void window_manager_enforce_rule_opacity(struct window_manager *wm, struct window *window)
+{
+    if (!wm->enable_window_opacity)                 return;
+    if (!window_manager_is_window_eligible(window)) return;
+    if (window->opacity == 0.0f)                    return;
+
+    uint32_t wid = window->id;
+    float target_opacity = window->opacity;
+
+    for (int i = 1; i <= 10; i++) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(i * 0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            struct window *w = window_manager_find_window(wm, wid);
+            if (w && w->opacity == target_opacity) {
+                scripting_addition_set_opacity(wid, target_opacity, 0.0f);
+            }
+        });
+    }
+}
+
 void window_manager_set_window_opacity(struct window_manager *wm, struct window *window, float opacity)
 {
     if (!wm->enable_window_opacity)                 return;
     if (!window_manager_is_window_eligible(window)) return;
-
-    if (window->opacity != 0.0f) {
-        uint32_t wid = window->id;
-        float target_opacity = window->opacity;
-        for (int i = 1; i <= 10; i++) {
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(i * 0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                scripting_addition_set_opacity(wid, target_opacity, 0.0f);
-            });
-        }
-        return;
-    }
 
     window_manager_set_opacity(wm, window, opacity);
 }

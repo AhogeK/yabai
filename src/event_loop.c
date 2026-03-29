@@ -33,10 +33,18 @@ static void window_did_receive_focus(struct window_manager *wm, struct mouse_sta
 {
     struct window *focused_window = window_manager_find_window(wm, wm->focused_window_id);
     if (focused_window && focused_window != window && window_space(focused_window->id) == window_space(window->id)) {
-        window_manager_set_window_opacity(wm, focused_window, g_window_manager.normal_window_opacity);
+        if (focused_window->opacity != 0.0f) {
+            window_manager_enforce_rule_opacity(wm, focused_window);
+        } else {
+            window_manager_set_window_opacity(wm, focused_window, g_window_manager.normal_window_opacity);
+        }
     }
 
-    window_manager_set_window_opacity(wm, window, wm->active_window_opacity);
+    if (window->opacity != 0.0f) {
+        window_manager_enforce_rule_opacity(wm, window);
+    } else {
+        window_manager_set_window_opacity(wm, window, wm->active_window_opacity);
+    }
 
     if (wm->focused_window_id != window->id) {
         if (ms->ffm_window_id != window->id) {

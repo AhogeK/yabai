@@ -2,6 +2,57 @@
 
 ## Current Work Focus
 
+**代码审查: ai-base 分支透明度逻辑分析 (2026-03-29)**
+
+---
+
+## 📋 审查结果摘要
+
+**审查范围**: commits `6ea7f16` + `07a2299` (opacity retry 机制)
+
+**整体结论**: 代码逻辑正确，但有 4 个问题需关注
+
+| 问题 | 严重性 | 核心点 |
+|------|--------|--------|
+| 问题一 | 🔴 中等 | `opacity` 参数被忽略，rule vs global 语义不清 |
+| 问题二 | 🟡 轻微 | focus 时 `active_window_opacity` 被 retry 覆盖 |
+| 问题三 | 🟡 轻微 | 缺少 workaround 原因注释 |
+| 问题四 | 🟡 轻微 | dispatch block 窗口销毁后 wid 仍被使用 |
+
+**核心决策点**: 当窗口同时有 rule opacity (`window->opacity != 0.0f`) 和系统 active_window_opacity 时，期望的最终行为是什么？
+
+---
+
+## ✅ 语义已确认 (2026-03-29 21:45)
+
+**决策**: 选项 A — rule opacity 是强制静态值，bypass 整个 active/normal 系统
+
+**Plan Agent 输出**:
+- 推荐方案: **Option D (Hybrid)**
+- 新增函数: `window_manager_enforce_rule_opacity()`
+- 修改文件: `src/event_loop.c`, `src/window_manager.c`
+- Session ID: `ses_2c61aac2dffet8VeB4GjbdfZc7`
+
+**已完成任务** (2026-03-29 22:00):
+- [x] Task 2: Implementation ✅
+- [x] Task 3: Build Verification ✅ (无警告)
+- [ ] Task 4: Git Commit (需用户授权)
+
+**变更摘要**:
+| 文件 | 变更 |
+|------|------|
+| `src/window_manager.c` | 新增 `window_manager_enforce_rule_opacity()` + WHY 注释 |
+| `src/window_manager.h` | 添加函数声明 |
+| `src/event_loop.c` | 修改 `window_did_receive_focus` 检查 rule opacity |
+
+**解决的问题**:
+1. ✅ `opacity` 参数不再被忽略
+2. ✅ `active_window_opacity` 不再在无效时传递
+3. ✅ 添加 WHY 注释解释 macOS 行为
+4. ✅ dispatch block 添加生命周期检查
+
+---
+
 **macOS 26 Space Creation - Phase 31: 多显示器支持已实现**
 
 ---
