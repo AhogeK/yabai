@@ -177,6 +177,12 @@ uint64_t space_create_addr = space_create_entry_fp;  // 直接使用预计算的
 
 ## Completed
 
+- [2026-03-30 02:30] **提交逆向工程文档** ✅
+  - `docs/my-reverse-report.md`: macOS 26 Space 创建完整技术报告 (39KB)
+  - `docs/my-reverse-engineering-learn.md`: 逆向工程研究方法指南 (70KB)
+  - 提交：`b772f22`
+  - 推送：`git push -u origin ai-base` ✅
+
 - [2026-03-30 02:25] **清理 commit message 签名** ✅
   - 移除内容：`Ultraworked with [Sisyphus]...` 和 `Co-authored-by: Sisyphus...`
   - **master**: 37b25e8, c9a83d5 (原 41a8a8a, f79cd13)
