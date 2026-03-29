@@ -177,6 +177,20 @@ uint64_t space_create_addr = space_create_entry_fp;  // 直接使用预计算的
 
 ## Completed
 
+- [2026-03-30 03:30] **实现动态 ADRP+ADD 地址解码（修正版）** 🚧
+  - **状态**: 已实现，待用户测试
+  - **新增函数**:
+    - `decode_adrp_add_pair()`: 修正符号扩展逻辑（bit 20 为符号位）
+    - `find_spaces_singleton_instructions()`: 使用 `pacibsp+stp` 锚点精确定位
+  - **关键改进**:
+    - 锚点 1: `pacibsp` (0xd503237f) - 函数入口签名
+    - 锚点 2: `stp d9,d8` + `stp x24,x23` - 唯一标识 HotCorners::_handleEvents
+    - 扫描范围：3MB 窗口
+    - 日志输出：打印匹配的指令供 Ghidra 验证
+  - **文件**: `src/osax/payload.m` (+66 行，-2 行)
+  - **编译**: ✅ 无警告
+  - **待办**: 用户需测试并验证日志输出
+
 - [2026-03-30 02:30] **提交逆向工程文档** ✅
   - `docs/my-reverse-report.md`: macOS 26 Space 创建完整技术报告 (39KB)
   - `docs/my-reverse-engineering-learn.md`: 逆向工程研究方法指南 (70KB)
