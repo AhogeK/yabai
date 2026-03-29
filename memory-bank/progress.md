@@ -177,6 +177,21 @@ uint64_t space_create_addr = space_create_entry_fp;  // 直接使用预计算的
 
 ## Completed
 
+- [2026-03-30 02:20] **修正所有分支版本至 7.1.19** ✅
+  - **master**: 
+    - 回滚到 5821619 (v7.1.18)
+    - 单独提交：f79cd13 (window_manager.c 修复)
+    - 单独提交：41a8a8a (版本 bump)
+    - 推送：`git push --force-with-lease origin master` ✅
+  - **dev**:
+    - 修正 src/yabai.c: PATCH 18 → 19
+    - 修订提交：843e291 (原 bcffff1)
+    - 推送：`git push --force-with-lease origin dev` ✅
+  - **ai-base**:
+    - 版本同步：ff2f1b0
+    - 推送：`git push -u origin ai-base` ✅
+  - **结果**: 所有分支 PATCH=19，版本统一 ✅
+
 - [2026-03-30 02:00] **更新 dev 分支版本至 7.1.19** ✅
   - CHANGELOG.md: 添加 7.1.19  release note
   - scripts/install.sh: VERSION="7.1.19"
