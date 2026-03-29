@@ -6,6 +6,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [7.1.19] - 2026-03-30
+### Changed
+- Fix opacity retry logic for first-open window flicker
+
 ## [7.1.18] - 2026-03-29
 ### Changed
 - Validate scripting-addition socket message length to prevent possbility of stack corruption [#2751](https://github.com/asmvik/yabai/issues/2751)
