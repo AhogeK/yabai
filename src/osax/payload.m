@@ -159,6 +159,78 @@ static uint64_t image_slide(void)
     return 0;
 }
 
+#if __arm64__
+// Decode ADRP + ADD instruction pair to get data address
+// Uses correct sign-extension for 21-bit ADRP immediate
+static uint64_t decode_adrp_add_pair(uint32_t *pc)
+{
+    uint32_t adrp_ins = pc[0];
+    uint32_t add_ins  = pc[1];
+
+    // ADRP decoding: 21-bit immediate (immlo[2] + immhi[19])
+    // immlo: bits 29-30 (2 bits)
+    // immhi: bits 5-23 (19 bits, sign-extended)
+    int64_t immlo = (adrp_ins >> 29) & 0x3;
+    int64_t immhi = (int32_t)((adrp_ins >> 5) & 0x7ffff);  // Sign-extend bit 19
+
+    // Concatenate and sign-extend: bit 20 is sign bit for 21-bit value
+    int64_t adrp_imm = ((immhi << 2) | immlo);
+    if (adrp_imm & 0x100000) {  // If bit 20 is 1 (negative)
+        adrp_imm |= ~0x1fffff;   // Fill upper bits with 1s
+    }
+    adrp_imm <<= 12;  // Scale by 4KB page
+
+    // ADD decoding: 12-bit immediate (bits 10-21)
+    uint64_t add_imm = (add_ins >> 10) & 0xfff;
+
+    // Calculate final address: page base + offsets
+    uint64_t adrp_page = (uint64_t)pc & ~0xfffULL;
+    return adrp_page + adrp_imm + add_imm;
+}
+
+// Double-anchor search: find callers of addSpace, then trace back to their singleton load
+// This binds "data load" to "usage of that data" - extremely precise
+// Logic: 1) Find BL to addSpace (target_func_addr), 2) Search backwards for adrp+add pair
+static uint32_t *find_spaces_singleton_instructions(uint64_t baseaddr, uint64_t slide, uint64_t target_func_addr)
+{
+    // UI logic lives in mid-to-late section
+    uint8_t *ptr = (uint8_t *)(baseaddr + slide + 0x100000);
+    uint8_t *end = (uint8_t *)(baseaddr + slide + 0x400000);
+    
+    for (uint8_t *p = ptr; p < end - 100; p += 4) {
+        uint32_t *ins = (uint32_t *)p;
+        
+        // 1. Search for BL instruction (opcode 0x94000000)
+        if ((ins[0] & 0xfc000000) == 0x94000000) {
+            // 2. Decode BL target address
+            // BL encoding: imm26 (26-bit signed offset, scaled by 4)
+            int32_t imm26 = (int32_t)((ins[0] & 0x03ffffff) << 6) >> 6;  // Sign-extend
+            uint64_t bl_target = (uint64_t)ins + (imm26 << 2);
+            
+            // 3. If BL target is exactly our addSpace function
+            if (bl_target == target_func_addr) {
+                // 4. Search BACKWARDS 10 instructions for nearest adrp+add pair
+                for (int j = -1; j > -10; j--) {
+                    // Check ADRP (feature bits 0x90000000)
+                    if ((ins[j] & 0x9f000000) == 0x90000000) {
+                        // Check ADD (feature bits 0x91000000)
+                        if ((ins[j+1] & 0xff000000) == 0x91000000) {
+                            // Validate: ADRP dest register must equal ADD source register
+                            int adrp_rd = (ins[j] & 0x1f);
+                            int add_rn = (ins[j+1] >> 5) & 0x1f;
+                            if (adrp_rd == add_rn) {
+                                return &ins[j];  // Success! Found the caller's singleton load
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return NULL;
+}
+#endif
+
 static uint64_t hex_find_seq(uint64_t baddr, const char *c_pattern)
 {
     if (!baddr || !c_pattern) return 0;
@@ -606,9 +678,24 @@ static void do_space_create(char *message)
         // Use pre-computed function pointer from init_instances
         uint64_t space_create_addr = space_create_entry_fp;
 
-        // Read Spaces singleton: file offset 0x488028, confirmed via LLDB adrp/add decode
+        // Dynamically decode Spaces singleton address using ADRP+ADD pattern matching
+        // Anchor: pacibsp + stp sequence in HotCorners::_handleEvents function prologue
         uint64_t baseaddr = static_base_address() + image_slide();
-        uintptr_t spaces_global_ptr = baseaddr + 0x488028ULL;
+        uint32_t *pattern = find_spaces_singleton_instructions(baseaddr, 0, space_create_entry_fp);
+        if (!pattern) {
+            NSLog(@"[yabai-sa][SPACE] ERROR: Could not find Spaces singleton instructions");
+            CFRelease(display_uuid);
+            return;
+        }
+
+        // Log the matched instructions for verification against Ghidra output
+        NSLog(@"[yabai-sa][SPACE] Found instructions: 0x%08x 0x%08x at %p",
+              pattern[0], pattern[1], (void *)pattern);
+
+        uintptr_t spaces_global_ptr = (uintptr_t)decode_adrp_add_pair(pattern);
+        NSLog(@"[yabai-sa][SPACE] Decoded Spaces singleton ptr=0x%llx from instructions at %p",
+              (uint64_t)spaces_global_ptr, (void *)pattern);
+
         id spaces_singleton = *(id *)spaces_global_ptr;
 
         NSLog(@"[yabai-sa][SPACE] singleton=%p func=0x%llx",
