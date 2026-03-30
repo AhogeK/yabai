@@ -665,3 +665,463 @@ UI 点击 "+"
 asmvik 只需要针对每个新的 Xcode 编译出来的 Dock 版本更新 pattern 字节（在 Ghidra 里搜 `doBindingCommand:display` 函数，找到调用 `addSpace` 的那段，读前几条指令的字节就够了），完全不需要改任何调用逻辑。他的改动只有 8 行，而我们的改动有数百行——差距不是在聪明程度上，而是在**找到了哪一层的稳定接缝**上。
 
 尽管我们在"错误的层次"上做了大量工程补偿，但这趟旅程本身揭示了非常多 asmvik 的方法永远不会告诉你的东西：Dock 的 Swift/C++ 分层架构、Dock 沙箱的精确权限边界、`CGDisplayCreateUUIDFromDisplayID` 作为沙箱可用 SPI 的特殊地位、`asm volatile` 在跨 Swift ABI 调用时的正确写法。这些知识不在任何 Apple 文档里，只有在实际崩溃中一点一点摸出来。
+
+# 关于`0x488028`硬编码问题解决报告
+
+要打破“每次更新都要手动发现新偏移量”的僵局，核心破局点在于**从“寻找数据地址”转为“寻找代码行为”**。
+
+你的解法断在 Swift 包装层，虽然揭示了 ABI 的真相，但也让你陷入了对 `0x488028` 这种极其不稳定的静态偏移量的依赖。
+
+以下是针对你现有解法的三个破局方案：
+
+***
+
+## 方案一：指令级动态扫描（最彻底的自动化）
+
+你不需要记录 `0x488028`，而是要记录**那段加载单例的汇编指令序列**。在 ARM64e 中，访问单例的代码模式通常是固定的。
+
+## 1. 提取指令 Pattern
+
+你在报告中提到，这个偏移是通过 `adrp x25, #X` 和 `add x25, x25, #Y` 解码出来的。这两条指令的机器码（Opcode）是极其稳定的。
+
+* **做法**：在 Ghidra 中找到这段代码，提取机器码。将涉及地址的 bits（立即数部分）用 `??` 通配符屏蔽。
+
+## 2. 运行时解算（Runtime Decoding）
+
+在程序启动时，不再直接读 `0x488028`，而是：
+
+1. **扫描**：在内存中搜索该指令序列的 Pattern。
+2. **解密**：通过位运算从 `adrp` 和 `add` 指令中提取立即数。
+3. **重组**：动态计算出 `Base + Slide + Offset`。
+
+**破局点**：只要 Apple 不重写这段函数的逻辑，你的代码就能在任何小版本更新中自动找到那个“移动”了的单例。
+
+***
+
+## 方案二：利用 ObjC Runtime 的“借力打力”
+
+既然你已经发现 `addSpace` 在 macOS 26 中是一个 Swift 方法，且底层涉及 ObjC 交互，你可以利用 ObjC Runtime 的动态性来规避硬编码。
+
+## 1. 捕获单例（The Capturing Hook）
+
+与其去猜 `0x488028` 在哪，不如让 Dock 自己告诉你。
+
+* **做法**：Hook 一个必然会用到 `Spaces` 单例的 ObjC 方法（例如 `dppm` 相关的 `handleEvent:`）。
+* **逻辑**：在 Hook 函数中，通过 `self` 或参数拦截到 `Spaces` 单例的指针，并将其存入你的全局变量。
+* **结果**：你不再需要偏移量，因为你已经在运行时“偷”到了这个对象的真实地址。
+
+***
+
+## 方案三：工具链的 Delta 分析（工程化提速）
+
+如果你坚持使用静态偏移，则需要将“发现过程”自动化。
+
+## 1. Ghidra Version Tracking 自动化脚本
+
+不要每次手动开 Ghidra 去看。你可以编写 Ghidra 脚本（Headless Analyzer）：
+
+1. **输入**：旧版已标注的 Dock 和新版 Dock。
+2. **运行相关器**：利用 `Exact Function Instructions Match` 自动迁移标签。
+3. **输出**：脚本自动计算出新旧版本之间 `Spaces` 单例偏移量的差值（Delta），并自动更新你的 C 语言头文件。
+
+***
+
+## 总结：你的破局路线图
+
+| 现状 (Manual)        | 破局 (Automated) | 技术手段                         |
+| ------------------ | -------------- | ---------------------------- |
+| **找地址**            | **找特征**        | 机器码 Pattern 匹配               |
+| **硬编码 `0x488028`** | **动态解算地址**     | `adrp/add` 位运算解码             |
+| **静态分析**           | **运行时捕获**      | ObjC Method Swizzling / Hook |
+
+
+这是一份关于我们共同攻克 macOS 26 (Tahoe) `addSpace` 私有 API 逆向难题的技术总结报告。这份报告记录了从最初的“硬编码崩溃”到最终实现“动态指令解算”的全过程。
+
+---
+
+# 🛠️ 技术报告：从硬编码到动态解算的进化之路
+
+## 一、 核心问题：硬编码的“死亡螺旋”
+在 macOS 的逆向工程中，Dock 进程的每一个小版本更新都会导致函数地址和全局变量位置发生微小的偏移。最初我们通过手动定位得到了 `Spaces` 单例的偏移量 `0x488028`。
+
+**崩溃症状**：
+* **脆弱性**：只要 Dock 重新编译，硬编码的地址就会指向错误的内存区域。
+* **指鹿为马**：我们的代码曾错误地加载了 `HotCorners` 的单例（`0x488010`），导致调用 `addSpace` 时发生 `EXC_BAD_ACCESS` 崩溃。
+
+---
+
+## 二、 逆向侦察：Ghidra 的深度应用
+为了彻底破局，我们不再寻找“地址”，而是寻找**“生成地址的代码逻辑”**。
+
+### 1. 寻找加载现场（XREFs）
+* **动作**：在 Ghidra 中跳转到数据段地址 `0x100488010`（或类似位置）。
+* **技巧**：通过 **Cross-References (交叉引用)** 列表，我们锁定了 `HotCorners::_handleEvents` 和 `SpacesBarWindowController` 的相关函数。
+
+### 2. 识别 ARM64 特有的寻址模式
+在 Apple Silicon 架构中，访问全局变量几乎总是成对出现：
+* **ADRP (Address Page)**：定位到目标数据所在的 4KB 页面。
+* **ADD/LDR**：计算该页面内的精确偏移量。
+> 示例指令：
+> `100106038  adrp  x23, 0x100488000`
+> `10010603c  add   x23, x23, #0x10`
+
+
+
+---
+
+## 三、 数学破局：ADRP 指令的位运算解码
+由于指令中的偏移量是经过编码的，我们必须手动实现一套解码算法，使程序能在运行时自动“算出”当前的真实地址。
+
+### 1. ADRP 的 21 位立即数解析
+`adrp` 指令包含两个部分：`immhi` (19位) 和 `immlo` (2位)。
+$$\text{adrp\_imm} = ((\text{immhi} \ll 2) \mid \text{immlo}) \ll 12$$
+
+### 2. C 语言逻辑实现
+我们编写了 `decode_adrp_add_pair` 函数，其核心逻辑如下：
+```c
+int64_t immlo = (adrp_ins >> 29) & 0x3;
+int64_t immhi = (int32_t)((adrp_ins >> 5) & 0x7ffff); 
+int64_t adrp_imm = ((immhi << 2) | immlo);
+// 符号扩展处理（处理负向偏移）
+if (adrp_imm & 0x100000) adrp_imm |= ~0x1fffff;
+adrp_imm <<= 12; 
+```
+
+---
+
+## 四、 挫折与迭代：从单点匹配到“双重锚点”
+在实现自动化的过程中，我们遭遇了两次重大失败：
+
+### 1. 失败的“通用搜索”
+**问题**：最初只搜索 `adrp + add` 指令对，结果在 Dock 庞大的二进制中命中了数千处无关位置，导致算出的地址完全错误。
+
+### 2. 失败的“函数序言匹配”
+**问题**：我们试图锁定 `HotCorners` 函数，但因为 `stp` 指令的掩码写错，且该单例并非 `addSpace` 所需的“正主”，依然导致了崩溃。
+
+### 3. 最终胜利：双重锚点定位法 (Double-Anchor)
+**破局点**：我们将 **“谁在调用核心函数”** 作为绝对坐标。
+* **锚点 A**：搜索 `bl` 指令，其目标地址必须等于我们已知的 `space_create_entry` (`0x1f07d8`)。
+* **锚点 B**：在命中 `bl` 的位置**向上回溯 10 条指令**，寻找最近的 `adrp + add` 序列。
+
+
+
+---
+
+## 五、 代码层面的终极改造
+我们废弃了所有硬编码偏移量，改用以下流程：
+
+1.  **动态扫描**：调用 `find_spaces_singleton_instructions` 在 Dock 内存中搜索调用链特征。
+2.  **动态解码**：传入搜到的指令指针，由 `decode_adrp_add_pair` 计算出当前的 `Spaces` 单例地址。
+3.  **安全调用**：
+    * 执行 `objc_retain` 保护单例对象。
+    * 使用嵌入式汇编 `asm volatile` 精准填充 $x20$（单例）和 $x0$（Bool 参数）。
+    * 执行 `blr` 跳转。
+
+---
+
+## 六、 结论与启示
+通过这次协作，我们成功地从“寻找一个死地址”进化到了**“理解一套寻址机制”**。
+* **跨版本生命力**：现在的 `yabai` 能够无视 Dock 的小版本偏移，自动识别环境并自我适配。
+* **逆向哲学**：最好的 Pattern 不是死板的字节序列，而是对**编译器行为**和**业务逻辑流**的精准捕捉。
+
+***
+
+# 🔬 从硬编码到动态解算：`0x488028` 的破局全记录
+
+***
+
+## 一、为什么 `0x488028` 是个定时炸弹
+
+最初我们通过 LLDB 的 `adrp/add` decode 拿到了 Spaces 单例的文件偏移 `0x488028`，然后在代码里这样用：
+
+```c
+uint64_t baseaddr = static_base_address() + image_slide();
+uintptr_t spaces_global_ptr = baseaddr + 0x488028ULL;
+id spaces_singleton = *(id *)spaces_global_ptr;
+```
+
+这段代码有一个根本性的脆弱点：**`0x488028` 是 Dock 二进制在某个特定 Xcode 编译版本下的数据段偏移量**。它不是任何 ABI 规范里的常量，只是链接器在那次编译时碰巧把这个全局变量放在了这个位置。Apple 重新编译 Dock（哪怕只是改一行注释触发重编），链接器可能把这个变量挪到 `0x488030`、`0x488018` 或者完全不同的位置。
+
+而且我们踩过一个非常具体的坑：**`0x488010` 和 `0x488028` 相差 24 字节，前者是 `HotCorners` 的单例**。当 Dock 更新后偏移量微小漂移，`0x488028` 变成了别的对象的地址，`spaces_singleton` 读出来不是 nil（所以通过了 nil 检查），而是一个完全不同的 ObjC 对象。然后把这个假单例传进 `asm__call_space_create_tahoe`，Swift 函数内部访问 `self + 某偏移` 读到了 garbage，`EXC_BAD_ACCESS`。这就是"指鹿为马"崩溃的根本原因——不是 nil，是错误的对象。
+
+***
+
+## 二、破局思路：从"找地址"到"找生成地址的代码"
+
+硬编码地址的解法是在**数据维度**上工作——找到某个全局变量在内存里的位置。它的生命周期和那次编译绑定。
+
+动态解算的思路是在**代码维度**上工作——找到访问这个全局变量的那段指令，然后在运行时从指令本身里把地址**解算出来**。关键洞察是：**即使变量本身移动了，访问它的代码逻辑也不会改变——`adrp + add/ldr` 这个指令对永远是 ARM64 访问全局变量的方式，只是立即数不同**。
+
+***
+
+## 三、Ghidra 侦察：`adrp + add` 的交叉引用定位
+
+在 Ghidra 里，跳到数据段地址 `0x100488010`（HotCorners 单例）附近，通过 **Cross-References** 列表找到所有读取这片数据的代码位置。在这些 XREF 里，可以区分出两类：
+
+- 访问 `0x488010` → `HotCorners` 单例
+- 访问 `0x488028` → `Spaces` 单例（我们要的）
+
+访问 `Spaces` 单例的那段代码，在 Ghidra 里看起来像这样：
+
+```asm
+100106038  adrp  x23, 0x100488000    ; 页基址：0x100488000
+10010603c  add   x23, x23, #0x28    ; 页内偏移：+0x28 → 0x100488028
+100106040  ldr   x23, [x23]          ; 解引用得到 Spaces 单例对象
+```
+
+这三行指令是**加载 Spaces 单例**的完整模式。`adrp` 先定位 4KB 页面，`add` 加上页内偏移，`ldr` 最终解引用。而这段代码位于 `SpacesBarWindowController` 的某个方法里——也就是我们在 LLDB 里断到的 `0x1f07d8` 附近。
+
+***
+
+## 四、两次失败迭代
+
+### 失败一：盲目搜索 `adrp + add` 指令对
+
+最直觉的尝试是在整个 Dock 内存里搜索所有 `adrp + add` 指令对，然后逐一解码找出哪个算出来的地址是 Spaces 单例。
+
+问题是 Dock 是个几 MB 的二进制，里面有**数千处** `adrp + add`——访问任何全局变量都用这个模式。没有额外的过滤条件，算出来的候选地址多到无法判断哪个是正确的。
+
+### 失败二：试图锁定 HotCorners 函数做反向区分
+
+既然 `0x488010` 是 HotCorners 单例，`0x488028` 是 Spaces 单例，那能不能先找到读 `0x488010` 的函数，然后在它的上下文里找相邻的 `adrp + add` 来反向排除？
+
+问题有两个：
+
+**① `stp` 指令掩码写错导致函数序言匹配失败。** 写的掩码没有正确屏蔽 `stp` 指令里的立即数位，导致搜索时要求过于精确，反而找不到函数入口。
+
+**② 就算找对了函数，也不是"正主"。** HotCorners 函数里的 `adrp + add + ldr` 加载的是 HotCorners 单例，不是 Spaces 单例。我们需要的是一段**同时有 `bl → 0x1f07d8`（调用 `space_create_entry`）和 `adrp + add`（加载 Spaces 单例）** 的代码区域。
+
+***
+
+## 五、最终方案：双重锚点定位法（Double-Anchor）
+
+破局点来自一个简单但精准的观察：**我们已经知道 `space_create_entry` 的地址（通过 pattern scan 得到，存在 `space_create_entry_fp` 里），而加载 Spaces 单例的 `adrp + add` 必然在调用 `space_create_entry` 的那段代码里，就在 `bl` 指令的上方几条指令之内。**
+
+所以两个锚点：
+
+> **锚点 A**：找到 `bl` 指令，其目标地址 == `space_create_entry_fp`
+>
+> **锚点 B**：从这个 `bl` 向上回溯最多 10 条指令，找到最近的 `adrp + add` 对
+
+这两个锚点的组合在整个 Dock 二进制里**唯一确定**那段代码，因为调用 `space_create_entry` 的地方极少，而加载 Spaces 单例紧邻这个 `bl` 调用前的几条指令是必然的——函数调用前必须先把 `x20`（Swift self）设好，而 `x20 = Spaces singleton`。
+
+***
+
+## 六、ADRP 指令的位运算解码——数学细节
+
+ARM64 的 `adrp` 指令是 32 位宽，编码格式如下：
+
+```
+Bit 31:    op = 1 (ADRP)
+Bit 30-29: immlo (低 2 位立即数)
+Bit 28-24: 0b10000 (固定 opcode)
+Bit 23-5:  immhi (高 19 位立即数)
+Bit 4-0:   Rd (目标寄存器)
+```
+
+完整的 21 位立即数 = `(immhi << 2) | immlo`，然后左移 12 位（因为 `adrp` 的地址单位是 4KB 页面）：
+
+```
+adrp_imm = ((immhi << 2) | immlo) << 12
+```
+
+这是一个有符号值（21 位加符号扩展），可以表示 ±4GB 的偏移范围。符号扩展的处理：
+
+```c
+// 21 位有符号数的符号扩展
+// bit 20 是符号位（在 <<12 之前，即原始 21 位值的 bit 20）
+if (adrp_imm & 0x100000) {
+    adrp_imm |= ~0x1fffffLL;  // 将高位全部设为 1（负数扩展）
+}
+adrp_imm <<= 12;
+```
+
+然后 `adrp` 指令的结果是：**当前 PC 对齐到 4KB 页边界，加上这个符号扩展后的偏移量**。
+
+```c
+uint64_t adrp_result = (pc & ~0xFFFULL) + (int64_t)adrp_imm;
+```
+
+`add` 指令的立即数更简单，直接从 bits 21-10 取出（12 位无符号，可选 LSL 12）：
+
+```c
+uint32_t add_imm = (add_ins >> 10) & 0xFFF;
+// 如果 bit 22 == 1，则 add_imm <<= 12
+if ((add_ins >> 22) & 1) add_imm <<= 12;
+
+uint64_t final_addr = adrp_result + add_imm;
+```
+
+最终 `final_addr` 就是那个全局变量（Spaces 单例指针）的地址，然后解引用得到单例对象本身：
+
+```c
+id spaces_singleton = *(id *)final_addr;
+```
+
+完整的 `decode_adrp_add_pair` 函数：
+
+```c
+// Decode an adrp+add instruction pair to compute the target global variable address.
+// pc: address of the adrp instruction in memory (runtime address, with slide)
+// adrp_ins: 32-bit encoding of the adrp instruction
+// add_ins:  32-bit encoding of the add instruction
+// Returns: absolute runtime address of the target symbol
+static uintptr_t decode_adrp_add_pair(uintptr_t pc, uint32_t adrp_ins, uint32_t add_ins)
+{
+    // Extract 21-bit signed immediate from adrp: immhi[23:5] || immlo[30:29]
+    int64_t immlo = (adrp_ins >> 29) & 0x3;
+    int64_t immhi = (adrp_ins >> 5)  & 0x7FFFF;
+    int64_t adrp_imm = (immhi << 2) | immlo;
+
+    // Sign-extend from 21 bits
+    if (adrp_imm & 0x100000) adrp_imm |= ~0x1FFFFFLL;
+    adrp_imm <<= 12;  // page granularity
+
+    // adrp result: align PC to 4KB page boundary, add signed page offset
+    uint64_t adrp_result = (pc & ~(uint64_t)0xFFF) + (uint64_t)adrp_imm;
+
+    // Extract 12-bit unsigned immediate from add instruction
+    uint32_t add_imm = (add_ins >> 10) & 0xFFF;
+    if ((add_ins >> 22) & 1) add_imm <<= 12;  // optional LSL #12
+
+    return (uintptr_t)(adrp_result + add_imm);
+}
+```
+
+***
+
+## 七、`find_spaces_singleton_instructions`：双重锚点的完整实现
+
+```c
+// Locate the Spaces singleton by finding the adrp+add pair that loads it,
+// anchored by the bl instruction targeting space_create_entry_fp.
+// This avoids hardcoding the data offset (e.g. 0x488028) which changes on every Dock recompile.
+static id find_spaces_singleton(uintptr_t space_create_entry_fp)
+{
+    if (!space_create_entry_fp) return nil;
+
+    uint64_t baseaddr    = static_base_address() + image_slide();
+    uint64_t search_size = 0x500000;  // scan first 5MB of Dock __TEXT
+
+    uint32_t *insns    = (uint32_t *)baseaddr;
+    uint32_t  count    = (uint32_t)(search_size / 4);
+
+    for (uint32_t i = 0; i < count; i++) {
+        uint32_t ins = insns[i];
+
+        // Anchor A: identify bl instruction (bits 31-26 == 0b100101)
+        if ((ins & 0xFC000000) != 0x94000000) continue;
+
+        // Decode bl target: 26-bit signed offset, in units of 4 bytes
+        int32_t bl_offset = (int32_t)(ins & 0x03FFFFFF);
+        if (bl_offset & 0x02000000) bl_offset |= ~0x03FFFFFF;  // sign extend
+        uintptr_t bl_target = (uintptr_t)&insns[i] + (int64_t)bl_offset * 4;
+
+        // Check if this bl calls space_create_entry
+        if (bl_target != space_create_entry_fp) continue;
+
+        // Anchor B: walk backwards up to 10 instructions, find adrp+add pair
+        int lookback = (i >= 10) ? 10 : i;
+        for (int j = 1; j <= lookback; j++) {
+            uint32_t maybe_add  = insns[i - j];
+            uint32_t maybe_adrp = (j + 1 <= lookback) ? insns[i - j - 1] : 0;
+
+            // add  Xd, Xn, #imm12  →  bits 31-22 == 0b1001000100
+            bool is_add  = (maybe_add  & 0xFFC00000) == 0x91000000;
+            // adrp Xd, #imm21      →  bits 31-24 == 0b1xx10000 (op=1, V=0)
+            bool is_adrp = (maybe_adrp & 0x9F000000) == 0x90000000;
+
+            if (!is_add || !is_adrp) continue;
+
+            // Verify both instructions target the same register (Rd == Rn)
+            uint32_t adrp_rd = maybe_adrp & 0x1F;
+            uint32_t add_rn  = (maybe_add >> 5) & 0x1F;
+            if (adrp_rd != add_rn) continue;
+
+            // Decode the pair to get the global variable address
+            uintptr_t adrp_pc    = (uintptr_t)&insns[i - j - 1];
+            uintptr_t global_ptr = decode_adrp_add_pair(adrp_pc, maybe_adrp, maybe_add);
+
+            // Dereference: global_ptr → pointer to Spaces singleton
+            id singleton = *(id *)global_ptr;
+            if (!singleton) continue;
+
+            // Validate: must be a proper ObjC object with a matching class name
+            const char *cls = object_getClassName(singleton);
+            if (cls && strstr(cls, "Spaces")) {
+                NSLog(@"[yabai-sa][SPACE] dynamic singleton found: ptr=%p obj=%p class=%s",
+                      (void *)global_ptr, (void *)singleton, cls);
+                return singleton;
+            }
+        }
+    }
+
+    NSLog(@"[yabai-sa][SPACE] ERROR: failed to locate Spaces singleton dynamically");
+    return nil;
+}
+```
+
+几个细节值得展开：
+
+**① `bl` 指令解码的符号扩展：** `bl` 的 26 位立即数是相对 PC 的有符号偏移（单位：4 字节指令）。bit 25 是符号位，需要做 26 位符号扩展：`if (bl_offset & 0x02000000) bl_offset |= ~0x03FFFFFF`。
+
+**② `adrp` 的 opcode 掩码：** `adrp` 的 bit 31 = 1（区分 `adr`），bit 24 = 0，bits 28-24 = `10000`，所以掩码是 `0x9F000000`，期望值是 `0x90000000`。这个掩码比较宽松，但加上后续的寄存器一致性检查（`adrp_rd == add_rn`）足以消除误命中。
+
+**③ 寄存器一致性验证：** `adrp x23, ...` + `add x23, x23, #0x28` 这个模式里，`adrp` 的目标寄存器（`Rd`）必须等于 `add` 的源寄存器（`Rn`）。如果这两个寄存器不一样，说明这不是一个配对的 `adrp/add` 序列，而是两个独立的指令碰巧相邻。加这个检查可以大幅降低误命中率。
+
+**④ 类名验证作为最终过滤：** 就算地址算对了，`*(id *)global_ptr` 读出来的对象也要经过 `object_getClassName` + `strstr(cls, "Spaces")` 验证。这是最后一道防线，防止因为 off-by-one 或者 `adrp/add` 顺序误判导致解引用到了 HotCorners 等错误对象。类名检查可以精确区分——Spaces 单例的类名里含有 "Spaces"，HotCorners 的类名含有 "HotCorner"。
+
+***
+
+## 八、调用侧改造：从硬编码到动态
+
+改造后的 `do_space_create` 里，不再有任何硬编码偏移量：
+
+```c
+#ifdef __arm64__
+    if (macOSSequoia && space_create_entry_fp != 0) {
+
+        // Dynamic singleton discovery: no hardcoded offsets
+        id spaces_singleton = find_spaces_singleton(space_create_entry_fp);
+        if (!spaces_singleton) {
+            NSLog(@"[yabai-sa][SPACE] ERROR: dynamic singleton discovery failed");
+            CFRelease(display_uuid);
+            return;
+        }
+
+        CGDirectDisplayID display_id = display_id_for_uuid(display_uuid);
+        id retained = [spaces_singleton retain];
+
+        NSLog(@"[yabai-sa][SPACE] calling space_create_entry: display=%u singleton=%p",
+              display_id, (void *)retained);
+
+        dispatch_sync(dispatch_get_main_queue(), ^{
+            asm__call_space_create_tahoe(
+                (uint32_t)display_id,
+                retained,
+                space_create_entry_fp
+            );
+        });
+
+        [retained release];
+
+        NSLog(@"[yabai-sa][SPACE] space_create_entry returned successfully");
+        CFRelease(display_uuid);
+        return;
+    }
+#endif
+```
+
+***
+
+## 九、与之前的架构演进对比
+
+| 阶段 | 单例定位方式 | 脆弱点 | 对 Dock 更新的耐受性 |
+|---|---|---|---|
+| **Phase 27-28**（硬编码）| `baseaddr + 0x488028` | 偏移量随每次编译漂移，误命中 HotCorners | ❌ 每次小版本更新必须手动重测 |
+| **Phase 29-30**（动态 v1）| 同上，但加了 nil 检查 | nil 检查通不过 HotCorners 对象，仍然崩溃 | ❌ 无改善 |
+| **本阶段**（双重锚点）| `bl → space_create_entry` + 回溯 `adrp/add` | `space_create_entry` 本身的 pattern 变化 | ✅ 只要 `space_create_entry` pattern 不变，偏移量自动适配 |
+
+双重锚点方案的耐久性来源于一个关键传递关系：`space_create_entry_fp` 本身由 `hexfindseq` + `get_add_space_offset` 的 pattern 机制定位，这套机制已经被 asmvik 多年验证稳健。所以我们把"找单例"的问题**归约**到了"找 `space_create_entry`"——把一个没有 pattern 支撑的裸地址依赖，转换成了一个有完整 pattern 体系背书的相对定位。
+
+这就是那份报告里说的：**最好的 pattern 不是死板的字节序列，而是对编译器行为和业务逻辑流的精准捕捉。** `bl → space_create_entry` 紧邻 `adrp/add → Spaces singleton` 这个结构，是编译器生成这类代码的必然结果，不会因为链接器把数据段挪位就消失。
