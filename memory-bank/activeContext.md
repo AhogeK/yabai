@@ -2,11 +2,52 @@
 
 ## Current Work Focus
 
-**DPPM Scanner False Positive Fix (2026-03-30)**
+**Makefile deploy 修复 (2026-03-30 23:30)**
 
 ---
 
 ## 📋 最新变更
+
+**修复**: makefile deploy 打开 Accessibility 直接导航
+
+**问题**: `@open -a "System Settings"` 只打开设置，不导航到具体页面
+
+**修复**: 使用 URL scheme 直接打开 Accessibility
+```makefile
+@open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+```
+
+**提交**: `d499a53 fix(makefile): open Accessibility directly in System Settings`
+
+---
+
+**透明度问题已由用户解决**: 透明度代码位置问题导致窗口焦点问题，用户已自行修复
+
+---
+
+**OSAX 文件同步 dev → ai-base (2026-03-30 23:10)**
+
+---
+
+## 📋 之前变更
+
+**同步**: 从 dev 分支同步 `src/osax/arm64_payload.m` 和 `src/osax/payload.m`
+
+**变更内容**:
+- 添加 control-flow fingerprint 优先查找 DPPM singleton
+- DPPM pattern 字节修正 (第二字节放宽为通配符)
+- 恢复 macOS 26 的 add_space_pattern (之前返回 NULL)
+- 添加 macOS 26.4 特定的 add_space_pattern 变体
+
+**提交**: `6e69c07 fix(osax): prioritize control-flow fingerprint for DPPM singleton`
+
+---
+
+**DPPM Scanner False Positive Fix (2026-03-30)**
+
+---
+
+## 📋 之前变更
 
 **修复**: DPPM scanner 消除 false positive 匹配
 

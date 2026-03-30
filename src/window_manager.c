@@ -776,16 +776,7 @@ void window_manager_set_window_opacity(struct window_manager *wm, struct window 
 {
     if (!wm->enable_window_opacity)                 return;
     if (!window_manager_is_window_eligible(window)) return;
-    if (window->opacity != 0.0f) {
-        uint32_t wid = window->id;
-        float target_opacity = window->opacity;
-        for (int i = 1; i <= 10; i++) {
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(i * 0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                scripting_addition_set_opacity(wid, target_opacity, 0.0f);
-            });
-        }
-        return;
-    }
+    if (window->opacity != 0.0f)                    return;
 
     window_manager_set_opacity(wm, window, opacity);
 }
@@ -1488,6 +1479,16 @@ struct window *window_manager_create_and_add_window(struct space_manager *sm, st
             window_manager_apply_rules_to_window(sm, wm, window, window_title, window_role, window_subrole, one_shot_rules);
             window_manager_purify_window(wm, window);
             window_manager_set_window_opacity(wm, window, wm->normal_window_opacity);
+
+            if (window->opacity != 0.0f) {
+                uint32_t wid = window->id;
+                float target_opacity = window->opacity;
+                for (int i = 1; i <= 10; i++) {
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(i * 0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                        scripting_addition_set_opacity(wid, target_opacity, 0.0f);
+                    });
+                }
+            }
 
             if (application->is_hidden)                              goto out;
             if (window_check_flag(window, WINDOW_MINIMIZE))          goto out;

@@ -244,6 +244,18 @@ uint64_t space_create_addr = space_create_entry_fp;  // 直接使用预计算的
 
 ## Completed
 
+- [2026-03-30 23:30] **修复 makefile deploy 打开 Accessibility** ✅
+  - **文件**: `makefile`
+  - **提交**: `d499a53 fix(makefile): open Accessibility directly in System Settings`
+  - **变更**: 使用 URL scheme 直接导航到 Accessibility 页面
+  - **推送**: origin/ai-base ✅
+
+- [2026-03-30 23:10] **同步 dev → ai-base OSAX 文件** ✅
+  - **文件**: `src/osax/arm64_payload.m`, `src/osax/payload.m`
+  - **提交**: `6e69c07 fix(osax): prioritize control-flow fingerprint for DPPM singleton`
+  - **变更**: control-flow fingerprint 优先查找 DPPM singleton
+  - **推送**: origin/ai-base ✅
+
 - [2026-03-30 17:10] **提交并推送 DPPM 动态寻址实现** ✅
   - **提交**: `089bdad feat(osax): implement DPPM dynamic address decoding with behavioral fingerprint`
   - **代码审查**: 全部通过（7 个类别）
