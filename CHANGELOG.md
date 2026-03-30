@@ -6,6 +6,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [7.1.20] - 2026-03-30
+### Added
+- macOS 26 (Tahoe): Dynamic address decoding for DPPM and Spaces singletons
+- Eliminated hardcoded offsets via ADRP+LDR/ADR+ADD pattern matching with behavioral fingerprinting
+
+### Changed
+- Replaced hex_find_seq with runtime instruction decoding for all macOS 26+ singletons
+- DPPM singleton now uses 10-instruction validation with complete register flow verification
+
 ## [7.1.19] - 2026-03-30
 ### Changed
 - Fix opacity retry logic for first-open window flicker
