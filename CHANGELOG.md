@@ -6,11 +6,6 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
-## [7.1.21] - 2026-03-31
-### Fixed
-- Move opacity retry loop to window creation only (fixes window focus issue)
-- Open Accessibility directly in System Settings during deploy
-
 ## [7.1.20] - 2026-03-30
 ### Added
 - macOS 26 (Tahoe): Dynamic address decoding for DPPM and Spaces singletons
