@@ -103,7 +103,7 @@ deploy:
 	@echo "6. 回到终端，按回车键继续..."
 	@echo "-------------------------------------------------------"
 	@echo ""
-	@open -a "System Settings"
+	@open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
 	@-sh -c "read -p "按回车继续..." _"
 
 	@echo "🚀 [6/6] 加载 SA 并启动服务..."
