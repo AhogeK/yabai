@@ -2,11 +2,78 @@
 
 ## Current Work Focus
 
-**DOUBLE-ANCHOR Search 实现 (2026-03-30 06:00)**
+**DPPM Scanner False Positive Fix (2026-03-30)**
 
 ---
 
 ## 📋 最新变更
+
+**修复**: DPPM scanner 消除 false positive 匹配
+
+**问题根因** (用户日志分析):
+- Decoded offset: `0x410bb8` (WRONG - random object)
+- Expected offset: `0x4880d0` (DPPM singleton from Ghidra)
+- 原因: 前 6 指令是通用 ObjC Setter 模板 - Dock 中有数百个匹配
+- 结果: 错误对象传给 Mission Control → 类型不匹配 → Dock 崩溃循环
+
+**解决方案**: 添加 behavioral fingerprint (cbnz + str) 验证
+
+**新增验证** (10 指令完整验证):
+| 指令 | 验证内容 | 目的 |
+|------|----------|------|
+| ins[0-5] | Setter prologue | 基础锚点 |
+| ins[6] | ADRP + 提取 dest register | 页基址加载 |
+| ins[7] | LDR + 提取 base/target register | singleton 值加载到 x0 |
+| ins[8] | 👑 CBNZ x0 | nil 检查 → 非 nil 则崩溃 |
+| ins[9] | 👑 STR x19 | nil 时存储 retained 对象 |
+
+**数据流验证**:
+```
+adrp_rd == ldr_rn  → LDR 使用 ADRP 计算的地址
+ldr_rt == 0        → LDR 加载值到 x0
+cbnz_rt == 0       → CBNZ 检查刚加载的值 (x0)
+str_rn == adrp_rd  → STR 写回同一内存地址 (singleton)
+str_rt == 19       → STR 写入 x19 (retained 对象)
+```
+
+**预期日志**: `[yabai-sa][DPPM] SUCCESS: Decoded dppm ptr=0x... (offset 0x4880d0)`
+
+**状态**: ✅ 编译成功，无警告，待用户测试
+
+**文件**: `src/osax/payload.m` (+45 行，-28 行)
+
+---
+
+**DPPM Dynamic Address Decoding 实现 (2026-03-30)**
+
+---
+
+## 📋 之前变更
+
+**实现**: DPPM (DesktopPicturePolicyManager) 动态地址解码
+
+**背景**: 用户通过 Ghidra 逆向分析发现：
+- `DAT_1004880d0` 是 DPPM singleton 全局变量
+- 加载方式为 `adrp + ldr` (不同于 Spaces singleton 的 `adrp + add`)
+- `setDesktopPictureManager:` 函数 (`FUN_10011cd90`) 有独特的 5 指令序言
+
+**新增函数**:
+| 函数 | 用途 | 关键点 |
+|------|------|--------|
+| `decode_adrp_ldr_pair()` | 解码 ADRP+LDR 指令对 | LDR offset 在 bits 10-21，scale by 8 |
+| `find_dppm_singleton_instructions()` | 查找 setDesktopPictureManager 函数 | 使用 10 指令 + behavioral fingerprint |
+
+**预期结果**: 解码地址 offset 应为 `0x4880d0`
+
+**文件**: `src/osax/payload.m`
+
+---
+
+**DOUBLE-ANCHOR Search 实现 (2026-03-30 06:00)**
+
+---
+
+## 📋 之前变更
 
 **问题**: CALLER-BASED Search 仍匹配错误 singleton (offset 0x488010)，应为 0x488028
 

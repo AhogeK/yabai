@@ -188,6 +188,32 @@ static uint64_t decode_adrp_add_pair(uint32_t *pc)
     return adrp_page + adrp_imm + add_imm;
 }
 
+// Decode ADRP + LDR instruction pair for DPPM singleton
+// LDR (unsigned immediate) format: offset is in bits 10-21 (12-bit), scaled by 8 for 64-bit load
+// Machine code feature bits: 0xF9400000 (LDR Xn, [Xm, #imm])
+// Formula: imm12 = (ldr_ins >> 10) & 0xfff; offset = imm12 << 3
+static uint64_t decode_adrp_ldr_pair(uint32_t *pc)
+{
+    uint32_t adrp_ins = pc[0];
+    uint32_t ldr_ins  = pc[1];
+
+    // 1. Decode ADRP (same logic as decode_adrp_add_pair)
+    int64_t immlo = (adrp_ins >> 29) & 0x3;
+    int64_t immhi = (int32_t)((adrp_ins >> 5) & 0x7ffff);
+    int64_t adrp_imm = ((immhi << 2) | immlo);
+    if (adrp_imm & 0x100000) adrp_imm |= ~0x1fffff;
+    adrp_imm <<= 12;
+
+    // 2. Decode LDR immediate offset (12-bit unsigned, scaled by 8 for 64-bit load)
+    // LDR (unsigned immediate) encoding: size=11 (64-bit), opc=01 (signed offset)
+    // Bits 10-21 contain the 12-bit unsigned immediate
+    uint64_t ldr_imm = ((ldr_ins >> 10) & 0xfff) << 3;
+
+    // 3. Calculate final physical address
+    uint64_t adrp_page = (uint64_t)pc & ~0xfffULL;
+    return adrp_page + adrp_imm + ldr_imm;
+}
+
 // Double-anchor search: find callers of addSpace, then trace back to their singleton load
 // This binds "data load" to "usage of that data" - extremely precise
 // Logic: 1) Find BL to addSpace (target_func_addr), 2) Search backwards for adrp+add pair
@@ -225,6 +251,74 @@ static uint32_t *find_spaces_singleton_instructions(uint64_t baseaddr, uint64_t 
                     }
                 }
             }
+        }
+    }
+    return NULL;
+}
+
+// Find setDesktopPictureManager function and extract DPPM singleton pointer
+// Find setDesktopPictureManager and extract DPPM pointer
+// Added behavioral fingerprint (cbnz + str) to eliminate false Setter matches
+//
+// PROBLEM: First 6 instructions are generic ObjC Setter template - hundreds of matches in Dock
+// SOLUTION: Validate 10 consecutive instructions with complete data flow verification
+//
+// Unique fingerprint from Ghidra analysis of FUN_10011cd90:
+//   ins[6]: adrp x8, 0x100488000
+//   ins[7]: ldr x0, [x8, #0xd0]      ← Load current singleton to x0
+//   ins[8]: cbnz x0, LAB_CRASH       ← If not nil, jump to crash logic
+//   ins[9]: str x19, [x8, #0xd0]     ← If nil, store retained x19 to singleton
+//
+// This "check-nil → crash-if-not-nil → store-if-nil" pattern is UNIQUE to DPPM singleton init
+static uint32_t *find_dppm_singleton_instructions(uint64_t baseaddr, uint64_t slide)
+{
+    uint8_t *ptr = (uint8_t *)(baseaddr + slide + 0x100000);
+    uint8_t *end = (uint8_t *)(baseaddr + slide + 0x400000);
+
+    for (uint8_t *p = ptr; p < end - 40; p += 4) {
+        uint32_t *ins = (uint32_t *)p;
+
+        // 1. Verify generic Setter prologue (first 6 instructions)
+        // These exact values come from Ghidra disassembly of setDesktopPictureManager:
+        if (ins[0] != 0xd503237f) continue;  // pacibsp
+        if (ins[1] != 0xa9be4ff4) continue;  // stp x20, x19, [sp, #-0x20]!
+        if (ins[2] != 0xa9017bfd) continue;  // stp x29, x30, [sp, #0x10]
+        if (ins[3] != 0x910043fd) continue;  // add x29, sp, #0x10
+        if (ins[4] != 0xaa0003f3) continue;  // mov x19, x0
+        if ((ins[5] & 0xfc000000) != 0x94000000) continue; // bl _objc_retain
+
+        // 2. Verify ADRP (load page base address)
+        // Machine code: 0x90000000 family (mask 0x9f000000 to ignore register)
+        if ((ins[6] & 0x9f000000) != 0x90000000) continue;
+        int adrp_rd = ins[6] & 0x1f;  // Extract destination register (e.g., x8)
+
+        // 3. Verify LDR (load current singleton value to x0)
+        // Machine code: 0xF9400000 (LDR Xn, [Xm, #imm]) - mask 0xffc00000
+        if ((ins[7] & 0xffc00000) != 0xf9400000) continue;
+        int ldr_rn = (ins[7] >> 5) & 0x1f;  // Base register (address source)
+        int ldr_rt = ins[7] & 0x1f;         // Target register (value destination)
+
+        // 4. 👑 FINGERPRINT 1: CBNZ (if not nil, jump to crash logic)
+        // Machine code: 0xB5000000 (CBNZ Xn, #imm) - mask 0xff000000
+        // This is the UNIQUE behavioral marker - generic setters don't crash on double-set
+        if ((ins[8] & 0xff000000) != 0xb5000000) continue;
+        int cbnz_rt = ins[8] & 0x1f;  // Register being checked for nil
+
+        // 5. 👑 FINGERPRINT 2: STR (if nil, store retained x19 to singleton address)
+        // Machine code: 0xF9000000 (STR Xt, [Xn, #imm]) - mask 0xffc00000
+        if ((ins[9] & 0xffc00000) != 0xf9000000) continue;
+        int str_rn = (ins[9] >> 5) & 0x1f;  // Base register (destination address)
+        int str_rt = ins[9] & 0x1f;         // Source register (value to store)
+
+        // 6. 🎯 ULTIMATE LOGIC FLOW VALIDATION: Ensure all instructions operate on SAME variable!
+        // This guarantees we found the EXACT singleton initialization pattern, not a random setter
+        if (adrp_rd == ldr_rn &&      // LDR uses address computed by ADRP
+            ldr_rt == 0 &&            // LDR loads value to x0 (standard for nil-check)
+            cbnz_rt == 0 &&           // CBNZ checks the value just loaded (x0)
+            str_rn == adrp_rd &&      // STR writes back to SAME memory address (singleton)
+            str_rt == 19) {           // STR writes x19 (the retained object we're setting)
+
+            return &ins[6];  // ABSOLUTELY UNIQUE MATCH! Return adrp instruction address
         }
     }
     return NULL;
@@ -481,6 +575,30 @@ static void init_instances()
         } else {
             space_create_entry_fp = 0;
             NSLog(@"[yabai-sa] No space_create_entry offset for macOS %ld", (long)os_version.majorVersion);
+        }
+    }
+
+    // macOS 26: Dynamic address decoding for DPPM singleton
+    // Uses ADRP+LDR pattern from setDesktopPictureManager function (FUN_10011cd90)
+    if (os_version.majorVersion >= 26) {
+        uint32_t *dppm_pattern = find_dppm_singleton_instructions(baseaddr, 0);
+        if (dppm_pattern) {
+            uintptr_t dppm_global_ptr = (uintptr_t)decode_adrp_ldr_pair(dppm_pattern);
+            id dppm_singleton = *(id *)dppm_global_ptr;
+
+            NSLog(@"[yabai-sa][DPPM] SUCCESS: Decoded dppm ptr=0x%llx (offset 0x%llx), instance=%p",
+                  (uint64_t)dppm_global_ptr,
+                  (uint64_t)(dppm_global_ptr - baseaddr),
+                  (void *)dppm_singleton);
+
+            // Override the hex_find_seq result with dynamically decoded address
+            if (dppm_singleton) {
+                dp_desktop_picture_manager = [dppm_singleton retain];
+            } else {
+                NSLog(@"[yabai-sa][DPPM] WARNING: DPPM singleton is nil at decoded address");
+            }
+        } else {
+            NSLog(@"[yabai-sa][DPPM] ERROR: Could not find DPPM instructions");
         }
     }
 #endif

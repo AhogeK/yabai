@@ -1,10 +1,77 @@
 # Progress - yabai
 
-## Current Phase: macOS 26 Space Creation - Phase 28 (等待用户测试)
+## Current Phase: macOS 26 DPPM Scanner False Positive Fix (待用户测试)
 
 ---
 
 ## Phase History
+
+### Phase 33: DPPM Scanner False Positive Fix ✅ IMPLEMENTED (2026-03-30)
+
+**问题**: 用户日志显示 DPPM scanner 匹配错误 singleton
+- Decoded offset: `0x410bb8` (WRONG - random object)
+- Expected offset: `0x4880d0` (DPPM singleton from Ghidra)
+
+**根因分析**:
+- 前 6 指令是通用 ObjC Setter 模板
+- Dock 中有数百个类似函数
+- 原代码只验证 prologue + adrp + ldr，太宽松
+
+**解决方案**: 添加 behavioral fingerprint (cbnz + str)
+- 验证 10 条连续指令（而非 6 条）
+- 提取并验证寄存器编号 (adrp_rd, ldr_rn, ldr_rt, cbnz_rt, str_rn, str_rt)
+- 完整数据流验证确保所有指令操作同一变量
+
+**Unique Fingerprint** (来自 Ghidra FUN_10011cd90):
+```
+ins[6]: adrp x8, 0x100488000
+ins[7]: ldr x0, [x8, #0xd0]      ← Load current singleton to x0
+ins[8]: cbnz x0, LAB_CRASH       ← If not nil, jump to crash logic
+ins[9]: str x19, [x8, #0xd0]     ← If nil, store retained x19 to singleton
+```
+
+**数据流验证逻辑**:
+```
+adrp_rd == ldr_rn  → LDR uses address computed by ADRP
+ldr_rt == 0        → LDR loads value to x0
+cbnz_rt == 0       → CBNZ checks the value just loaded (x0)
+str_rn == adrp_rd  → STR writes back to SAME memory address
+str_rt == 19       → STR writes x19 (the retained object)
+```
+
+**文件**: `src/osax/payload.m` (+45 行，-28 行)
+**编译**: ✅ 成功，无警告
+**状态**: 待用户测试验证 offset 是否为 `0x4880d0`
+
+---
+
+### Phase 32: DPPM Dynamic Address Decoding ✅ IMPLEMENTED (2026-03-30)
+
+**背景**: 用户通过 Ghidra 逆向分析发现 DPPM singleton 加载方式不同于 Spaces singleton
+
+**关键发现**:
+- DPPM 使用 `adrp + ldr` 指令对 (而非 `adrp + add`)
+- `setDesktopPictureManager:` 函数有独特的 5 指令序言
+- 预期 offset: `0x4880d0`
+
+**新增函数**:
+- `decode_adrp_ldr_pair()`: 解码 ADRP+LDR 指令对
+- `find_dppm_singleton_instructions()`: 使用序言锚点查找函数
+
+**序言锚点**:
+```
+0xd503237f (pacibsp)
+0xa9be4ff4 (stp x20, x19, [sp, #-0x20]!)
+0xa9017bfd (stp x29, x30, [sp, #0x10])
+0x910043fd (add x29, sp, #0x10)
+0xaa0003f3 (mov x19, x0)
+```
+
+**文件**: `src/osax/payload.m` (+55 行)
+**编译**: ✅ 成功，无警告
+**状态**: 待用户测试验证 offset 是否为 `0x4880d0`
+
+---
 
 ### Phase 1-3: 分析与实现 ✅ COMPLETE
 
@@ -176,6 +243,22 @@ uint64_t space_create_addr = space_create_entry_fp;  // 直接使用预计算的
 ---
 
 ## Completed
+
+- [2026-03-30 06:30] **实现 DPPM 动态寻址方案** 🚧
+  - **问题**: `could not locate pointer to dppm! moving spaces will not work!`
+  - **根本原因**: 旧代码用 `adrp + add` Pattern，但 macOS 26 编译器优化为 `adrp + ldr`（偏移量直接嵌入 LDR 指令）
+  - **用户逆向成果**:
+    - 找到 `setDesktopPictureManager` 函数（`FUN_10011cd90`）
+    - 5 指令序言锚点：`pacibsp` + `stp x20,x19` + `stp x29,x30` + `add x29,sp` + `mov x19,x0`
+    - 第 7-8 指令：`adrp + ldr` 对
+    - DPPM 单例偏移：`0x4880d0`（与 Spaces 单例 `0x488028` 紧邻）
+  - **实现**:
+    - `decode_adrp_ldr_pair()`: LDR offset 在 bits 10-21，12-bit << 3
+    - `find_dppm_singleton_instructions()`: 5 指令序言锚点扫描
+    - 调用位置：`init_instances()` macOS 26 专属块
+  - **预期日志**: `[yabai-sa][DPPM] SUCCESS: Decoded dppm ptr=0x... (offset 0x4880d0)`
+  - **状态**: 已编译，待用户测试
+  - **文件**: `src/osax/payload.m` (+85 行)
 
 - [2026-03-30 06:10] **🎉 DOUBLE-ANCHOR Search 成功！Space 创建史诗级突破** ✅
   - **状态**: 已测试，成功！Space 创建成功，Dock 未崩溃
