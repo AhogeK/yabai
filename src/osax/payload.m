@@ -455,9 +455,31 @@ static void init_instances()
 #endif
     }
 
+#ifdef __arm64__
+    // macOS 26: Try control-flow fingerprint FIRST
+    if (macOSSequoia) {
+        uint32_t *dppm_pattern = find_dppm_singleton_instructions(baseaddr, 0);
+        if (dppm_pattern) {
+            uintptr_t dppm_global_ptr = (uintptr_t)decode_adrp_ldr_pair(dppm_pattern);
+            id dppm_singleton = *(id *)dppm_global_ptr;
+
+            NSLog(@"[yabai-sa][DPPM] Located via control-flow fingerprint: ptr=0x%llx (offset 0x%llx), instance=%p",
+                  (uint64_t)dppm_global_ptr,
+                  (uint64_t)(dppm_global_ptr - baseaddr),
+                  (void *)dppm_singleton);
+
+            if (dppm_singleton) {
+                dp_desktop_picture_manager = [dppm_singleton retain];
+                goto dppm_done;  // Skip asmvik's entire dppm block
+            }
+        }
+        NSLog(@"[yabai-sa][DPPM] Control-flow fingerprint failed, falling back to pattern scan");
+    }
+#endif
+
+    {  // Wrap asmvik's dppm block
     uint64_t dppm_addr = hex_find_seq(baseaddr + get_dppm_offset(os_version), get_dppm_pattern(os_version));
     if (dppm_addr == 0) {
-        dp_desktop_picture_manager = nil;
         NSLog(@"[yabai-sa] could not locate pointer to dppm! moving spaces will not work!");
     } else {
 #ifdef __x86_64__
@@ -490,6 +512,8 @@ static void init_instances()
         }
 #endif
     }
+    }  // End wrap of asmvik's dppm block
+    dppm_done: ;  // Empty statement required after label in C
 
     uint64_t add_space_addr = hex_find_seq(baseaddr + get_add_space_offset(os_version), get_add_space_pattern(os_version));
     if (add_space_addr == 0x0) {
@@ -853,9 +877,7 @@ static void do_space_create(char *message)
                      ? [[objc_getClass("ManagedSpace") alloc] init]
                      : [[objc_getClass("Dock.ManagedSpace") alloc] init];
         id display_space = display_space_for_display_uuid(display_uuid);
-
         asm__call_add_space(new_space, display_space, add_space_fp);
-
         CFRelease(display_uuid);
     });
 }
