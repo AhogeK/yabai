@@ -191,7 +191,7 @@ static uint64_t decode_adrp_add_pair(uint32_t *pc)
 // Decode ADRP + LDR instruction pair for DPPM singleton
 // LDR (unsigned immediate) format: offset is in bits 10-21 (12-bit), scaled by 8 for 64-bit load
 // Machine code feature bits: 0xF9400000 (LDR Xn, [Xm, #imm])
-// Formula: imm12 = (ldr_ins >> 10) & 0xfff; offset = imm12 << 3
+// Offset calculation: imm12 = (ldr_ins >> 10) & 0xfff; offset = imm12 << 3
 static uint64_t decode_adrp_ldr_pair(uint32_t *pc)
 {
     uint32_t adrp_ins = pc[0];
@@ -214,9 +214,8 @@ static uint64_t decode_adrp_ldr_pair(uint32_t *pc)
     return adrp_page + adrp_imm + ldr_imm;
 }
 
-// Double-anchor search: find callers of addSpace, then trace back to their singleton load
-// This binds "data load" to "usage of that data" - extremely precise
-// Logic: 1) Find BL to addSpace (target_func_addr), 2) Search backwards for adrp+add pair
+// Find callers of addSpace and trace back to their singleton load
+// Searches for BL instruction to target_func_addr, then backwards for adrp+add pair
 static uint32_t *find_spaces_singleton_instructions(uint64_t baseaddr, uint64_t slide, uint64_t target_func_addr)
 {
     // UI logic lives in mid-to-late section
@@ -257,19 +256,17 @@ static uint32_t *find_spaces_singleton_instructions(uint64_t baseaddr, uint64_t 
 }
 
 // Find setDesktopPictureManager function and extract DPPM singleton pointer
-// Find setDesktopPictureManager and extract DPPM pointer
-// Added behavioral fingerprint (cbnz + str) to eliminate false Setter matches
+// Uses behavioral fingerprint (cbnz + str) to eliminate false Setter matches
+// First 6 instructions are generic ObjC Setter template, so we validate 10 consecutive
+// instructions with complete data flow verification for unique identification
 //
-// PROBLEM: First 6 instructions are generic ObjC Setter template - hundreds of matches in Dock
-// SOLUTION: Validate 10 consecutive instructions with complete data flow verification
-//
-// Unique fingerprint from Ghidra analysis of FUN_10011cd90:
+// Fingerprint from Ghidra analysis of FUN_10011cd90:
 //   ins[6]: adrp x8, 0x100488000
-//   ins[7]: ldr x0, [x8, #0xd0]      ← Load current singleton to x0
-//   ins[8]: cbnz x0, LAB_CRASH       ← If not nil, jump to crash logic
-//   ins[9]: str x19, [x8, #0xd0]     ← If nil, store retained x19 to singleton
+//   ins[7]: ldr x0, [x8, #0xd0]      - Load current singleton to x0
+//   ins[8]: cbnz x0, LAB_CRASH       - If not nil, jump to crash logic
+//   ins[9]: str x19, [x8, #0xd0]     - If nil, store retained x19 to singleton
 //
-// This "check-nil → crash-if-not-nil → store-if-nil" pattern is UNIQUE to DPPM singleton init
+// The check-nil/crash-if-not-nil/store-if-nil pattern identifies DPPM singleton init
 static uint32_t *find_dppm_singleton_instructions(uint64_t baseaddr, uint64_t slide)
 {
     uint8_t *ptr = (uint8_t *)(baseaddr + slide + 0x100000);
@@ -298,27 +295,27 @@ static uint32_t *find_dppm_singleton_instructions(uint64_t baseaddr, uint64_t sl
         int ldr_rn = (ins[7] >> 5) & 0x1f;  // Base register (address source)
         int ldr_rt = ins[7] & 0x1f;         // Target register (value destination)
 
-        // 4. 👑 FINGERPRINT 1: CBNZ (if not nil, jump to crash logic)
+        // Verify CBNZ instruction (behavioral fingerprint 1)
         // Machine code: 0xB5000000 (CBNZ Xn, #imm) - mask 0xff000000
-        // This is the UNIQUE behavioral marker - generic setters don't crash on double-set
+        // Generic setters don't crash on double-set, making this a unique marker
         if ((ins[8] & 0xff000000) != 0xb5000000) continue;
         int cbnz_rt = ins[8] & 0x1f;  // Register being checked for nil
 
-        // 5. 👑 FINGERPRINT 2: STR (if nil, store retained x19 to singleton address)
+        // Verify STR instruction (behavioral fingerprint 2)
         // Machine code: 0xF9000000 (STR Xt, [Xn, #imm]) - mask 0xffc00000
         if ((ins[9] & 0xffc00000) != 0xf9000000) continue;
         int str_rn = (ins[9] >> 5) & 0x1f;  // Base register (destination address)
         int str_rt = ins[9] & 0x1f;         // Source register (value to store)
 
-        // 6. 🎯 ULTIMATE LOGIC FLOW VALIDATION: Ensure all instructions operate on SAME variable!
-        // This guarantees we found the EXACT singleton initialization pattern, not a random setter
+        // Validate complete data flow to ensure unique match
+        // All instructions must operate on the same variable
         if (adrp_rd == ldr_rn &&      // LDR uses address computed by ADRP
             ldr_rt == 0 &&            // LDR loads value to x0 (standard for nil-check)
             cbnz_rt == 0 &&           // CBNZ checks the value just loaded (x0)
-            str_rn == adrp_rd &&      // STR writes back to SAME memory address (singleton)
+            str_rn == adrp_rd &&      // STR writes back to same memory address (singleton)
             str_rt == 19) {           // STR writes x19 (the retained object we're setting)
 
-            return &ins[6];  // ABSOLUTELY UNIQUE MATCH! Return adrp instruction address
+            return &ins[6];  // Return adrp instruction address
         }
     }
     return NULL;
