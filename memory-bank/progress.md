@@ -244,7 +244,19 @@ uint64_t space_create_addr = space_create_entry_fp;  // 直接使用预计算的
 
 ## Completed
 
-- [2026-03-30 06:30] **实现 DPPM 动态寻址方案** 🚧
+- [2026-03-30 17:10] **提交并推送 DPPM 动态寻址实现** ✅
+  - **提交**: `089bdad feat(osax): implement DPPM dynamic address decoding with behavioral fingerprint`
+  - **代码审查**: 全部通过（7 个类别）
+  - **测试验证**: DPPM offset `0x4880d0` ✅, Spaces offset `0x488028` ✅
+
+- [2026-03-30 17:15] **版本更新并推送** ✅
+  - **yabai 版本**: 7.1.19 → 7.1.20
+  - **SA 版本**: 2.1.26 → 2.1.27
+  - **提交**: `92e2358 chore: bump version to 7.1.20 and SA version to 2.1.27`
+  - **CHANGELOG**: `0adb127 docs: update CHANGELOG.md for version 7.1.20`
+  - **推送**: 所有提交已推送到 origin/ai-base ✅
+
+- [2026-03-30 06:30] **实现 DPPM 动态寻址方案** ✅ (已提交)
   - **问题**: `could not locate pointer to dppm! moving spaces will not work!`
   - **根本原因**: 旧代码用 `adrp + add` Pattern，但 macOS 26 编译器优化为 `adrp + ldr`（偏移量直接嵌入 LDR 指令）
   - **用户逆向成果**:
