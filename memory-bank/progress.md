@@ -1,6 +1,6 @@
 # Progress - yabai
 
-## Current Phase: macOS 26 DPPM Scanner False Positive Fix (待用户测试)
+## Current Phase: 文件同步完成
 
 ---
 
@@ -243,6 +243,17 @@ uint64_t space_create_addr = space_create_entry_fp;  // 直接使用预计算的
 ---
 
 ## Completed
+
+- [2026-03-31 00:45] **同步版本 7.1.21 到 dev** ✅
+  - **文件**: `CHANGELOG.md`, `scripts/install.sh`, `src/yabai.c`
+  - **提交**: `5a79c52 chore: bump version to 7.1.21`
+  - **推送**: origin/dev ✅
+
+- [2026-03-31 00:38] **同步 ai-base → dev 文件** ✅
+  - **文件**: `makefile`, `src/window_manager.c`
+  - **提交**: `1bdb33d` (makefile), `cc825e1` (window_manager) on dev
+  - **变更**: makefile Accessibility URL scheme + window_manager opacity retry
+  - **推送**: origin/dev ✅ (分两次提交，符合 conventional commits 规范)
 
 - [2026-03-30 23:30] **修复 makefile deploy 打开 Accessibility** ✅
   - **文件**: `makefile`
