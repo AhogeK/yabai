@@ -6,16 +6,19 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [7.1.21] - 2026-03-31
+### Fixed
+- Move opacity retry loop to window creation only (fixes window focus issue)
+- Open Accessibility directly in System Settings during deploy
+
 ## [7.1.20] - 2026-03-30
 ### Added
-- macOS 26 (Tahoe): Dynamic address decoding for Space creation
-- Control-flow fingerprint for DPPM singleton location
-- ADRP+ADD/LDR instruction decoders for runtime address resolution
+- macOS 26 (Tahoe): Dynamic address decoding for DPPM and Spaces singletons
+- Eliminated hardcoded offsets via ADRP+LDR/ADR+ADD pattern matching with behavioral fingerprinting
 
 ### Changed
-- Space creation now uses DOUBLE-ANCHOR search with early return
-- DPPM initialization prioritizes behavioral fingerprint over pattern matching
-- asmvik's original logic preserved as fallback
+- Replaced hex_find_seq with runtime instruction decoding for all macOS 26+ singletons
+- DPPM singleton now uses 10-instruction validation with complete register flow verification
 
 ## [7.1.19] - 2026-03-30
 ### Changed
