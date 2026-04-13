@@ -6,6 +6,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [7.1.21] - 2026-04-13
+### Fixed
+- Add O_CLOEXEC flag to lockfile descriptor to prevent fd inheritance by child processes (fixes lock僵死 on restart) [#2775](https://github.com/asmvik/yabai/issues/2775)
+
 ## [7.1.20] - 2026-03-30
 ### Added
 - macOS 26 (Tahoe): Dynamic address decoding for DPPM and Spaces singletons
