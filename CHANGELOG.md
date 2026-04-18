@@ -18,6 +18,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Changed
 - Replaced hex_find_seq with runtime instruction decoding for all macOS 26+ singletons
 - DPPM singleton now uses 10-instruction validation with complete register flow verification
+- `Space --focus` command now works with SIP enabled [#2780](https://github.com/asmvik/yabai/issues/2780)
 
 ## [7.1.19] - 2026-03-30
 ### Changed
