@@ -899,6 +899,52 @@ enum space_op_error space_manager_move_space_to_display(struct space_manager *sm
     return SPACE_OP_ERROR_SCRIPTING_ADDITION;
 }
 
+static bool space_manager_focus_space_using_gesture(uint32_t new_did, uint64_t new_sid)
+{
+    uint32_t cur_did = display_manager_cursor_display_id();
+    if (cur_did != new_did) {
+        CGWarpMouseCursorPosition(display_center(new_did));
+    }
+
+    uint64_t cur_sid = display_space_id(new_did);
+    int cur_index = space_manager_mission_control_index(cur_sid);
+    int new_index = space_manager_mission_control_index(new_sid);
+
+    //
+    // NOTE(asmvik): MacOS does not have an API that allows for space activation.
+    // However, we can synthesize a sequence of high velocity gestures to skip the
+    // animation instead.
+    //
+    // :Attribution
+    // https://github.com/jurplel/InstantSpaceSwitcher
+    // https://github.com/thenickdude/wacom-driver-fix/blob/bdfda9a788934c88d09d31ea6a42664b9ba1471e/Readme.md
+    // Technique first observed in practice, and reverse-engineered from, BetterTouchTool.
+    //
+
+    CGEventRef event_dock_control = CGEventCreate(NULL);
+    if (!event_dock_control) return false;
+
+    float sign = (new_index - cur_index) > 0 ? 1.0 : -1.0;
+    CGEventSetIntegerValueField(event_dock_control, /* kCGSEventTypeField            */  55, /* kCGSEventDockControl       */ 30);
+    CGEventSetIntegerValueField(event_dock_control, /* kCGEventGestureHIDType        */ 110, /* kIOHIDEventTypeDockSwipe   */ 23);
+    CGEventSetIntegerValueField(event_dock_control, /* kCGEventGestureSwipeMotion    */ 123, /* kCGGestureMotionHorizontal */  1);
+    CGEventSetDoubleValueField(event_dock_control,  /* kCGEventGestureSwipeVelocityX */ 129, sign * 999.0);
+    CGEventSetIntegerValueField(event_dock_control, /* kCGEventScrollGestureFlagBits */ 135, *(int32_t*)&sign);
+
+    int count = abs(new_index - cur_index);
+    for (int i = 0; i < count; ++i) {
+        CGEventSetIntegerValueField(event_dock_control, /* kCGEventGesturePhase */ 132, /* kCGSGesturePhaseBegan */ 1);
+        CGEventPost(kCGSessionEventTap, event_dock_control);
+        CGEventSetIntegerValueField(event_dock_control, /* kCGEventGesturePhase */ 132, /* kCGSGesturePhaseEnded */ 4);
+        CGEventPost(kCGSessionEventTap, event_dock_control);
+    }
+
+    CFRelease(event_dock_control);
+    display_manager_focus_display(new_did, new_sid);
+
+    return true;
+}
+
 enum space_op_error space_manager_focus_space(uint64_t sid)
 {
     bool is_in_mc = mission_control_is_active();
@@ -919,7 +965,7 @@ enum space_op_error space_manager_focus_space(uint64_t sid)
             display_manager_focus_display(new_did, sid);
         }
     } else {
-        return SPACE_OP_ERROR_SCRIPTING_ADDITION;
+        space_manager_focus_space_using_gesture(new_did, sid);
     }
 
     return SPACE_OP_ERROR_SUCCESS;
