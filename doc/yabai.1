@@ -2,12 +2,20 @@
 .\"     Title: yabai
 .\"    Author: [see the "AUTHOR(S)" section]
 .\" Generator: Asciidoctor 2.0.26
+<<<<<<< HEAD
 .\"      Date: 2026-03-12
+=======
+.\"      Date: 2026-04-19
+>>>>>>> ccbe8bd (#2781 improvements to removal of native window focus space animations)
 .\"    Manual: Yabai Manual
 .\"    Source: Yabai
 .\"  Language: English
 .\"
+<<<<<<< HEAD
 .TH "YABAI" "1" "2026-03-12" "Yabai" "Yabai Manual"
+=======
+.TH "YABAI" "1" "2026-04-19" "Yabai" "Yabai Manual"
+>>>>>>> ccbe8bd (#2781 improvements to removal of native window focus space animations)
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -241,6 +249,15 @@ Specify where new managed windows will be inserted.
 \fBwindow_zoom_persist\fP [\fI<BOOL_SEL>\fP]
 .RS 4
 Windows will keep their zoom\-state through layout changes.
+.RE
+.sp
+\fBskip_window_focus_animation\fP [\fI<BOOL_SEL>\fP]
+.RS 4
+Bypass macOS space animation when an application or window on an inactive space is focused.
+.br
+You should only enable this if you do NOT use the scripting addition.
+.br
+The scripting addition implements the same functionality in a more robust way.
 .RE
 .sp
 \fBwindow_shadow\fP [\fI<BOOL_SEL>|float\fP]
