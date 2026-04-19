@@ -5,6 +5,9 @@ All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+- Improve implementation to remove native window focus space animation, with SIP enabled. Gated behind config option (`skip_window_focus_animation`) [#2781](https://github.com/asmvik/yabai/issues/2781)
+
+## [7.1.21] - 2026-04-19
 ### Changed
 - Remove the space switch animation when using cmd+tab, and clicking on an item in the Dock, with SIP enabled [#2781](https://github.com/asmvik/yabai/issues/2781)
 
@@ -14,14 +17,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [7.1.20] - 2026-03-30
 ### Added
-- macOS 26 (Tahoe): Dynamic address decoding for Space creation
-- Control-flow fingerprint for DPPM singleton location
-- ADRP+ADD/LDR instruction decoders for runtime address resolution
+- macOS 26 (Tahoe): Dynamic address decoding for DPPM and Spaces singletons
+- Eliminated hardcoded offsets via ADRP+LDR/ADR+ADD pattern matching with behavioral fingerprinting
 
 ### Changed
-- Space creation now uses DOUBLE-ANCHOR search with early return
-- DPPM initialization prioritizes behavioral fingerprint over pattern matching
-- asmvik's original logic preserved as fallback
+- Replaced hex_find_seq with runtime instruction decoding for all macOS 26+ singletons
+- DPPM singleton now uses 10-instruction validation with complete register flow verification
+- `Space --focus` command now works with SIP enabled [#2780](https://github.com/asmvik/yabai/issues/2780)
 
 ## [7.1.19] - 2026-03-30
 ### Changed
