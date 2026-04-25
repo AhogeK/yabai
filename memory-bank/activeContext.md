@@ -2,23 +2,28 @@
 
 ## Current Work Focus
 
-**项目状态: 所有核心功能已完成 (2026-03-31)**
+**上游同步完成: 30 commits cherry-picked (2026-04-26)**
 
 ---
 
 ## 📋 最新变更
 
-**所有分支签名已清理**:
-- **master**: 历史重构，`1e920fd` 无签名
-- **dev**: `893d468` 无签名
-- **ai-base**: `f1a0bad` 无签名 → 当前工作: bump to 7.1.21 (O_CLOEXEC fix)
+**版本**: 7.1.25 (基于 7.1.21 + 上游 30 commits)
 
-**当前分支状态**:
-```
-master:  2325c81 (7.1.20)
-dev:     893d468 (7.1.20)
-ai-base: f1a0bad (7.1.20) → 待提交 7.1.21
-```
+**上游同步范围**: `7c4c5ba` → `f51e4b5` (30 commits)
+
+**关键变更**:
+- #2780: `Space --focus` 支持 SIP 启用模式 (5 commits)
+- #2781: 绕过 space 切换动画 + FFM 手势防护 (6 commits)
+- #2217: FFM 窗口 ID 重置 + 菜单事件修复 (2 commits)
+- #2147: 现代 macOS stub 旧函数 (1 commit)
+- #2694: 自动对焦延迟调整 (2 commits)
+- #2708: Intel x64 SA 修复 (2 commits)
+- macOS 26.4 Intel SA 更新 (1 commit)
+- 清理/文档 (3 commits)
+- 版本 bump (8 commits, 使用我们的版本号)
+
+**冲突解决**: CHANGELOG/install.sh/yabai.c 版本冲突全部用我们的版本解决
 
 ---
 

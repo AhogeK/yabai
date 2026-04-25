@@ -1,10 +1,17 @@
 # Progress - yabai
 
-## Current Phase: 版本 bump 7.1.20 → 7.1.21 (O_CLOEXEC fix)
+## Current Phase: 上游 30 commits 同步完成 (2026-04-26)
 
 ---
 
 ## Phase History
+
+### Phase 35: 上游 30 commits 全量同步 ✅ (2026-04-26)
+- **范围**: `7c4c5ba` → `f51e4b5` (30 commits)
+- **方式**: 逐个 cherry-pick，版本冲突用我们的版本解决
+- **版本**: 7.1.21 → 7.1.25
+- **构建**: ✅ 成功，无警告
+- **报告**: `docs/upstream-sync-report-2026-04-26.md`
 
 ### Phase 34: 上游 O_CLOEXEC 锁文件修复 + 版本 bump ✅ (2026-04-13)
 - **来源**: upstream commit `5e21351` (asmvik/yabai, 2026-04-06), issue #2775
