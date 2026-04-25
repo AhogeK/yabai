@@ -5,11 +5,25 @@ All notable changes to this project will be documented in this file.
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-- Improve implementation to remove native window focus space animation, with SIP enabled. Gated behind config option (`skip_window_focus_animation`) [#2781](https://github.com/asmvik/yabai/issues/2781)
 
-## [7.1.21] - 2026-04-19
+## [7.1.25] - 2026-04-26
+### Added
+- Sync upstream commits from 7c4c5ba to f51e4b5 (30 commits)
+
 ### Changed
+- `Space --focus` command now works with SIP enabled [#2780](https://github.com/asmvik/yabai/issues/2780)
 - Remove the space switch animation when using cmd+tab, and clicking on an item in the Dock, with SIP enabled [#2781](https://github.com/asmvik/yabai/issues/2781)
+- Improve implementation to remove native window focus space animation, with SIP enabled. Gated behind config option (`skip_window_focus_animation`) [#2781](https://github.com/asmvik/yabai/issues/2781)
+- Stub out `display_manager_begin` function on modern macOS versions [#2147](https://github.com/asmvik/yabai/issues/2147)
+- Slightly increase autofocus event delay [#2694](https://github.com/asmvik/yabai/issues/2694)
+- Update scripting addition for macOS 26.4 Intel x64 [#2708](https://github.com/asmvik/yabai/issues/2708)
+
+### Fixed
+- Properly reset ffm window id upon window close [#2217](https://github.com/asmvik/yabai/issues/2217)
+- Stale menu closed events should not disable focus follows mouse [#2217](https://github.com/asmvik/yabai/issues/2217)
+- Prevent ffm from triggering inside a space switching gesture [#2781](https://github.com/asmvik/yabai/issues/2781)
+- Fix broken scripting addition offset for macOS 15.7 Intel x64 [#2708](https://github.com/asmvik/yabai/issues/2708)
+- Add O_CLOEXEC flag to lockfile descriptor to prevent fd inheritance by child processes [#2775](https://github.com/asmvik/yabai/issues/2775)
 
 ## [7.1.21] - 2026-04-13
 ### Fixed
