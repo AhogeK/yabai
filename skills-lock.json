@@ -4,12 +4,12 @@
     "app-store": {
       "source": "rshankras/claude-code-apple-skills",
       "sourceType": "github",
-      "computedHash": "afdf4cd49051d795c452cab049f9ac5a6d13a9a09e97dbdc7c6d3277ddd1e5c5"
+      "computedHash": "bbf1b97352b6ca37229f0c73a606a362120fef971199aaefa78b1a01228e537e"
     },
     "apple-intelligence": {
       "source": "rshankras/claude-code-apple-skills",
       "sourceType": "github",
-      "computedHash": "86787eff2e351561b5ca78c6c06a6f31d2c58447611f45a22c99ef3fea26b521"
+      "computedHash": "cb396b15eff45606fa8cb00fff74c7a4fa76291a3bd516340b6eafcc47e79338"
     },
     "core-ml": {
       "source": "rshankras/claude-code-apple-skills",
@@ -19,12 +19,12 @@
     "design": {
       "source": "rshankras/claude-code-apple-skills",
       "sourceType": "github",
-      "computedHash": "09a095a1550f225e9264633931cc3c7d027ab2d09ecf5dcbc7e14f4c3cc15461"
+      "computedHash": "5d9822dfb0760568675bd748b34220ab28bbbb9e86a2d1dc12fef0f71cd04bd8"
     },
     "generators": {
       "source": "rshankras/claude-code-apple-skills",
       "sourceType": "github",
-      "computedHash": "9fc0c5f668216dbf6d86bc544d1ec31c3b75f2723ea72e3c460c0ced8612467a"
+      "computedHash": "e660236c6f68fc0ac68445240c78e32fbc0135f0914cb7ecc618db1a341c3497"
     },
     "growth": {
       "source": "rshankras/claude-code-apple-skills",
@@ -34,7 +34,7 @@
     "ios-development": {
       "source": "rshankras/claude-code-apple-skills",
       "sourceType": "github",
-      "computedHash": "d96bf1934ca2c01ca846f0babb6da4018c831a504a697d8d0519c827f4f4c683"
+      "computedHash": "6ae44504bbea6c10adb59ff112cbad983a9f3f5dbede000f7fbc5083c3d3076e"
     },
     "legal": {
       "source": "rshankras/claude-code-apple-skills",
@@ -44,7 +44,7 @@
     "macos-development": {
       "source": "rshankras/claude-code-apple-skills",
       "sourceType": "github",
-      "computedHash": "ff7fba1c081a1efb29e67526abc4e281fbb482f10e2b364f11fbbe85c2d34e05"
+      "computedHash": "e785d476d46a702399d9b688f8a23973f1b9159ba8b8537ddf5ddf15f6e6c565"
     },
     "monetization": {
       "source": "rshankras/claude-code-apple-skills",
@@ -54,7 +54,7 @@
     "product-development": {
       "source": "rshankras/claude-code-apple-skills",
       "sourceType": "github",
-      "computedHash": "32642c76dd61cd7a6efb16145000cb340d9c3b24203da67babe092eee2d39564"
+      "computedHash": "12d1cd67aae3bb8018b8badded942ec3780bd0cda4674b4e23b4a2076d66c239"
     },
     "release-review": {
       "source": "rshankras/claude-code-apple-skills",
@@ -69,7 +69,7 @@
     "shared": {
       "source": "rshankras/claude-code-apple-skills",
       "sourceType": "github",
-      "computedHash": "4da29b40afc5ed49cb257218fe856920b368cbc3d21a26c6c566db14f528e46f"
+      "computedHash": "77de5d9a716cd6a51e52a0c959f3396dbc7c731caebec7d9dddbf5015e228696"
     },
     "swift-development": {
       "source": "rshankras/claude-code-apple-skills",

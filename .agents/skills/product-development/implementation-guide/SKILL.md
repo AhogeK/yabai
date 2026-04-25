@@ -14,7 +14,7 @@ Generate detailed implementation guide with pseudo-code and step-by-step instruc
 - **Role**: Senior iOS/macOS Developer
 - **Author**: ProductAgent Team
 
-## Activation
+## When This Skill Activates
 
 This skill activates when the user says:
 - "generate implementation guide"
@@ -101,7 +101,7 @@ For the impatient developer:
 # Include Tests: Yes
 
 # 2. Set minimum deployment target
-# Project Settings → General → Minimum Deployments: iOS 17.0
+# Project Settings → General → Minimum Deployments: iOS 26.0 (or iOS 17+ for broader reach)
 
 # 3. Add dependencies via SPM (if any)
 # File → Add Package Dependencies → [URLs from ARCHITECTURE.md]
@@ -147,7 +147,7 @@ xcodebuild test -scheme [AppName]
 **File**: Select project in Navigator → General tab
 
 **Deployment Info**:
-- **Minimum Deployments**: iOS 17.0 [adjust based on ARCHITECTURE]
+- **Minimum Deployments**: iOS 26.0 [adjust based on ARCHITECTURE — iOS 17+ still supported for broader reach]
 - **Supported Destinations**: iPhone (✅), iPad (based on requirements)
 - **Device Orientation**:
   - Portrait (✅ Required)
