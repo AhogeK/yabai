@@ -60,6 +60,7 @@ extern CFArrayRef SLSCopyManagedDisplaySpaces(int cid);
 extern CGError SLSProcessAssignToSpace(int cid, pid_t pid, uint64_t sid);
 extern CGError SLSProcessAssignToAllSpaces(int cid, pid_t pid);
 extern void SLSMoveWindowsToManagedSpace(int cid, CFArrayRef window_list, uint64_t sid);
+static int64_t (* SLSPerformAsynchronousBridgedWindowManagementOperation)(void *);
 extern CGError CoreDockSendNotification(CFStringRef notification, int unknown);
 extern CGError SLSMoveWindow(int cid, uint32_t wid, CGPoint *point);
 extern CFArrayRef SLSCopyAssociatedWindows(int cid, uint32_t wid);
