@@ -1,3 +1,11 @@
+## [7.1.26] - 2026-05-10
+### Added
+- Sync upstream commits: moving windows between spaces works with SIP enabled [#2788]
+
+### Changed
+- Upstream: objc_msgSend bridged window management operation
+
+
 # Changelog
 
 All notable changes to this project will be documented in this file.
