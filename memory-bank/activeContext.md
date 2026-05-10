@@ -82,3 +82,8 @@
 |------|------|
 | 跨 space 失焦窗口透明度不恢复 | 原版设计，非本次引入 |
 | 重试 10 次魔法数字 (1秒覆盖) | Apple 未暴露相关 API，无完美解法 |
+- [2026-05-10 06:30] - Sync upstream #2788 (7 commits ce798b7..02de172)
+  - File: src/space_manager.c - upstream bridged window management for moving windows between spaces with SIP
+  - File: src/misc/extern.h - added SLSPerformAsynchronousBridgedWindowManagementOperation function pointer
+  - Version: 7.1.25 -> 7.1.26
+  - Conflict resolved: space_manager.c used upstream version for #2788 SIP window move support

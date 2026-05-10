@@ -91,3 +91,4 @@
 | systemPatterns.md | ~60 | 80 | ✅ |
 | techContext.md | ~60 | 80 | ✅ |
 | projectbrief.md | ~25 | 50 | ✅ |
+- [2026-05-10] Phase 36: Sync upstream #2788 (7 commits), version 7.1.26
