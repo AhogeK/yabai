@@ -5,6 +5,9 @@
 ### Changed
 - Upstream: objc_msgSend bridged window management operation
 
+### Fixed
+- Fix scripting-addition add_space for macOS 26.6 Apple Silicon [#2799]
+
 
 # Changelog
 
