@@ -585,13 +585,27 @@ static void init_instances()
     }
 
 #ifdef __arm64__
-    // macOS 26: Initialize space_create_entry_fp for direct call to 0x1f07d8
+    // macOS 26: Initialize space_create_entry_fp for direct call to space_create_entry
+    // Entry verified: must start with pacibsp (7F 23 03 D5). If the raw offset does not
+    // land on pacibsp (compiler may shift the prologue by a few bytes between Dock
+    // builds, e.g. 0x1f07d8 -> 0x1f07d4 on 26.6/25G72), scan +/-64 bytes for it.
     if (os_version.majorVersion >= 26) {
         uint64_t space_create_offset = get_space_create_entry_offset(os_version);
         if (space_create_offset != 0) {
             uint64_t space_create_addr = baseaddr + space_create_offset;
+            uint32_t *probe = (uint32_t *)space_create_addr;
+            if (probe[0] != 0xd503237f) {
+                for (int delta = -16; delta <= 16; delta++) {
+                    if (probe[delta] == 0xd503237f) {
+                        space_create_addr = (uint64_t)&probe[delta];
+                        NSLog(@"[yabai-sa] space_create_entry shifted, adjusted to 0x%llX (offset 0x%llx)",
+                              space_create_addr, space_create_addr - baseaddr);
+                        break;
+                    }
+                }
+            }
             NSLog(@"[yabai-sa] (0x%llx) space_create_entry found at 0x%llX (offset 0x%llx)",
-                  baseaddr, space_create_addr, space_create_offset);
+                  baseaddr, space_create_addr, space_create_addr - baseaddr);
             space_create_entry_fp = space_create_addr;
         } else {
             space_create_entry_fp = 0;
@@ -620,6 +634,31 @@ static void init_instances()
             }
         } else {
             NSLog(@"[yabai-sa][DPPM] ERROR: Could not find DPPM instructions");
+        }
+    }
+
+    // macOS 26: if the dock_spaces pattern scan failed (function moved between Dock
+    // builds), fall back to DOUBLE-ANCHOR dynamic discovery. dock_spaces is the same
+    // object as the Spaces singleton (0x488028) - it is passed as Swift self (x20) to
+    // both space_create_entry and moveSpace:toDisplay:displayUUID:.
+    if (os_version.majorVersion >= 26 && dock_spaces == nil && space_create_entry_fp != 0) {
+        uint32_t *spaces_pattern = find_spaces_singleton_instructions(baseaddr, 0, space_create_entry_fp);
+        if (spaces_pattern) {
+            uintptr_t spaces_global_ptr = (uintptr_t)decode_adrp_add_pair(spaces_pattern);
+            id spaces_singleton = *(id *)spaces_global_ptr;
+
+            NSLog(@"[yabai-sa][SPACE] dock_spaces fallback via DOUBLE-ANCHOR: ptr=0x%llx (offset 0x%llx), instance=%p",
+                  (uint64_t)spaces_global_ptr,
+                  (uint64_t)(spaces_global_ptr - baseaddr),
+                  (void *)spaces_singleton);
+
+            if (spaces_singleton) {
+                dock_spaces = [spaces_singleton retain];
+            } else {
+                NSLog(@"[yabai-sa][SPACE] dock_spaces fallback: singleton is nil at 0x%llx", (uint64_t)spaces_global_ptr);
+            }
+        } else {
+            NSLog(@"[yabai-sa][SPACE] dock_spaces fallback: could not locate Spaces singleton instructions");
         }
     }
 #endif
