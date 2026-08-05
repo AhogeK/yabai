@@ -1,3 +1,9 @@
+## [7.1.27] - 2026-08-05
+### Fixed
+- Fix space creation on macOS 26.6 (build 25G72): space_create_entry offset 0x1f07d8 -> 0x1f07d4, with pacibsp verification fallback for minor prologue shifts
+- Add DOUBLE-ANCHOR fallback for dock.spaces singleton discovery when the pattern scan fails
+- Scripting-addition version bumped to 2.1.31
+
 ## [7.1.26] - 2026-05-10
 ### Added
 - Sync upstream commits: moving windows between spaces works with SIP enabled [#2788]
