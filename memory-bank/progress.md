@@ -92,3 +92,12 @@
 | techContext.md | ~60 | 80 | ✅ |
 | projectbrief.md | ~25 | 50 | ✅ |
 - [2026-05-10] Phase 36: Sync upstream #2788 (7 commits), version 7.1.26
+- [2026-06-15] Phase 37: Sync upstream #2799 (add_space pattern for macOS 26.6 Apple Silicon), version remains 7.1.26
+
+### Phase 38: macOS 26.6 (25G72) space creation fix ⏳ (2026-08-05)
+- **症状**: 系统升级到 26.6 build 25G72 (Dock 2427.6, Jul 23) 后创建桌面失效
+- **根因 1**: space_create_entry 硬编码 0x1f07d8 → 新版入口 0x1f07d4 (pacibsp 前移 4 字节)
+- **根因 2**: dock_spaces pattern (doBindingCommand:display) 新版 0 匹配 → dock_spaces = nil → do_space_create 直接 return
+- **修复**: offset 修正 + pacibsp ±64B 搜索兜底 + dock_spaces DOUBLE-ANCHOR fallback (0x488028)
+- **静态验证**: ✅ pacibsp@0x1f07d4, caller 0x27eb0c → bl → 回溯 adrp+add → 0x488028; DPPM 0x4880d0 不受影响
+- **状态**: 代码完成 + 编译成功，**待用户安装 + 手动重启验证**

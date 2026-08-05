@@ -87,3 +87,15 @@
   - File: src/misc/extern.h - added SLSPerformAsynchronousBridgedWindowManagementOperation function pointer
   - Version: 7.1.25 -> 7.1.26
   - Conflict resolved: space_manager.c used upstream version for #2788 SIP window move support
+- [2026-06-15 16:24] - Sync upstream #2799 (add_space pattern for macOS 26.6 Apple Silicon)
+  - File: src/osax/arm64_payload.m - change pattern from exact match to wildcard (48 89 FC 97 -> ?? ?? ?? 97)
+  - File: src/osax/common.h - bump OSAX_VERSION from 2.1.29 to 2.1.30
+  - File: CHANGELOG.md - add entry under 7.1.26 Fixed section
+  - Version remains 7.1.26 (no version bump)
+- [2026-08-05] Fix space creation on macOS 26.6 (build 25G72, Dock 2427.6)
+  - Root cause: space_create_entry moved 0x1f07d8 -> 0x1f07d4 (4-byte shift, pacibsp now at 0x1f07d4); dock_spaces pattern (from doBindingCommand:display) 0 matches in new build
+  - File: src/osax/arm64_payload.m - get_space_create_entry_offset 0x1f07d8 -> 0x1f07d4
+  - File: src/osax/payload.m - add pacibsp verify +-64B scan fallback; add dock_spaces DOUBLE-ANCHOR fallback (dock_spaces == Spaces singleton 0x488028, passed as Swift self x20)
+  - File: src/osax/common.h - OSAX_VERSION 2.1.30 -> 2.1.31
+  - Verified static: 0x1f07d4 pacibsp, callers 0x22abb0/0x27eb0c bl->entry, backtrack -> 0x488028; DPPM 0x4880d0 unaffected
+  - Build: make success (universal binary)

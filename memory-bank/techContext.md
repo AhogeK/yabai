@@ -35,14 +35,16 @@
 | `CGSManagedDisplayAddSpace` | 0x0 (失效) |
 | `SLSSpaceCreate` | 0x0 (失效) |
 
-### Key Function Offsets (macOS 26.4 Tahoe)
+### Key Function Offsets (macOS 26.6 Tahoe, build 25G72, Dock 2427.6)
 
 | 偏移 | 功能 | 状态 |
 |------|------|------|
-| `0x1f07d8` | space_create_entry (Swift method) | ✅ 已实现 |
-| `0x1eb33c` | 数组遍历 | ✅ 已确认 |
+| `0x1f07d4` | space_create_entry (Swift method) — moved from 0x1f07d8 (26.4) | ✅ 已修复 |
+| `0x22abb0` / `0x27eb0c` | space_create_entry 调用点 (bl → 0x1f07d4) | ✅ 已确认 |
+| `0x1eb338` | 数组遍历 | ✅ 已确认 |
 | `0x285564` | CGSMoveManagedSpaceToDisplayIndex | ✅ 已确认 |
-| `0x19e150` | DPPM addSpace:forDisplayUUID: | ✅ 已确认 |
+| `0x488028` | Spaces singleton (数据段稳定) | ✅ 动态定位 |
+| `0x4880d0` | DPPM singleton (数据段稳定) | ✅ 动态定位 |
 
 ### Call Chain
 
