@@ -280,7 +280,10 @@ const char *get_set_front_window_pattern(NSOperatingSystemVersion os_version) {
 
 uint64_t get_space_create_entry_offset(NSOperatingSystemVersion os_version) {
     if (os_version.majorVersion == 26) {
-        return 0x1f07d8;  // Direct offset, no pattern needed
+        // macOS 26.6 (build 25G72, Dock 2427.6): entry moved from 0x1f07d8 to 0x1f07d4
+        // (pacibsp shifted 4 bytes; verified: entry starts with pacibsp, callers at
+        // 0x22abb0 / 0x27eb0c load Spaces singleton 0x488028 then bl to this entry)
+        return 0x1f07d4;  // Direct offset, no pattern needed
     }
     return 0;
 }
