@@ -1,3 +1,13 @@
+## [7.1.29] - 2026-09-15
+### Fixed
+- Space creation on macOS 27 (26A428 / Dock 2571.0.6.402): the Dock no longer hosts the Swift space-create entry used on macOS 26, so drive the helper it still ships - the same function the WindowManager server runs for the Mission Control "+" button - from the scripting-addition: `helper(cid, flags, type, displayUUID, pids) -> CGSSpaceCreate`
+- Resolve the two values that helper needs by static decoding instead of dlsym: the Dock's cached CGS connection id (pattern, swift_once-guarded getter) and the empty `[pid]` array singleton (`__swiftEmptyArrayStorage` is not dlsym-visible; its literal pool slot is decoded from the user-space call site). The helper is skipped if the singleton cannot be resolved, since a NULL there faults inside the Dock
+- Branch to pattern-resolved Dock addresses with a plain `blr`: clang emits an authenticated `braaz` for C function pointer calls on arm64e, which faults with PAC_EXCEPTION. dlsym'd pointers keep using `blraaz`
+- Apply the same branching rule to the remaining raw-address call sites (removeSpace, setFrontWindow)
+
+### Changed
+- macOS 27 space creation no longer uses the WindowManager admin XPC API. That service gates mutations behind per-connection assertions the Dock cannot obtain; verified in-Dock and out-of-process, so the code path and its symbol resolution were removed rather than kept as a dead fallback
+
 ## [7.1.28] - 2026-09-15
 ### Fixed
 - Restore space creation, space focus and window focus on macOS 27 (build 26A428): the scripting-addition rejected majorVersion 27 in its version gate, which disabled every scripting-addition feature
