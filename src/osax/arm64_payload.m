@@ -5,15 +5,9 @@
 
 // macOS 26 Tahoe: space_create_entry(display_id, Spaces_self)
 // Swift calling convention: self in x20, first arg in x0
-// Confirmed via LLDB Frame1 disassembly:
-//   <+88>: mov x20, x0   (x0 = retained Spaces singleton)
-//   <+92>: mov x0, x23   (x23 = display_id = 1)
-//   <+96>: bl  0x1f07d8
-//
-// Atomic asm block: set x0/x20 and call in one instruction sequence.
-// Compiler cannot insert instructions between them.
-// x0 = display_id (int32_t), x20 = Spaces singleton (Swift self)
-// x20 is callee-saved - must be restored after call to avoid corrupting caller.
+// NOTE: this macro uses a plain `blr`, so the function pointer MUST be a raw (unsigned)
+// address - space_create_entry_fp is a computed baseaddr+offset and is intentionally NOT
+// signed. If it is ever changed to a signed pointer, switch this to `blraaz`.
 #define asm__call_space_create_tahoe(display_id, spaces_self, func)     \
     do {                                                                  \
         __asm__ volatile (                                                \
@@ -95,7 +89,7 @@ uint64_t get_fix_animation_offset(NSOperatingSystemVersion os_version) {
 uint64_t get_add_space_offset(NSOperatingSystemVersion os_version) {
     if (os_version.majorVersion == 27) {
         // macOS 27 no longer exposes a Dock-local space create entry. Space creation is
-        // delegated to WindowManager.framework (see wm_create_space_fp in payload.m),
+        // delegated to the Dock's own create helper (see dock_space_create_fp in payload.m),
         // so the legacy addSpace function pointer is intentionally left unresolved.
         return 0;
     } else if (os_version.majorVersion == 26) {
@@ -238,7 +232,7 @@ const char *get_fix_animation_pattern(NSOperatingSystemVersion os_version) {
 const char *get_add_space_pattern(NSOperatingSystemVersion os_version) {
     if (os_version.majorVersion == 27) {
         // Legacy Dock addSpace is gone on 27; space creation goes through
-        // WindowManager.framework instead (see wm_create_space_fp in payload.m).
+        // the Dock's own create helper instead (see dock_space_create_fp in payload.m).
         return NULL;
     } else if (os_version.majorVersion == 26) {
         if (os_version.minorVersion >= 4) {
@@ -330,8 +324,8 @@ const char *get_set_front_window_pattern(NSOperatingSystemVersion os_version) {
 uint64_t get_space_create_entry_offset(NSOperatingSystemVersion os_version) {
     if (os_version.majorVersion == 27) {
         // macOS 27 removed the Dock-local Swift space creation entry (0x1f07d4 on 26.6).
-        // Space creation is now performed through WindowManager.framework - see
-        // wm_create_space_fp in payload.m. No Dock offset is available.
+        // Space creation now goes through the Dock's own create helper (located by pattern,
+        // see get_dock_space_create_offset) - no fixed entry offset exists for macOS 27.
         return 0;
     } else if (os_version.majorVersion == 26) {
         // macOS 26.6 (build 25G72, Dock 2427.6): entry moved from 0x1f07d8 to 0x1f07d4
@@ -343,7 +337,84 @@ uint64_t get_space_create_entry_offset(NSOperatingSystemVersion os_version) {
 }
 
 const char *get_space_create_entry_pattern(NSOperatingSystemVersion os_version) {
+    (void) os_version;
     // Return NULL - we use direct offset instead of pattern matching
     // The offset 0x1f07d8 was confirmed via dynamic analysis call stack
+    return NULL;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// macOS 27: Dock-local space creation (G3 replacement for space_create_entry)
+//
+// macOS 27 moved space creation out of the Dock's public path into
+// WindowManager.framework (whose admin-XPC route is assertion-gated and unusable from the
+// Dock). The Dock does keep a Swift helper that performs the creation
+// directly through SkyLight:
+//
+//   helper(cid, flags, type, displayUUID: String, pids: [pid]) -> new space ID
+//   -> CGSSpaceCreate(cid, flags, @{@"type", @"uuid", @"pid"})
+//
+// WindowManager.app carries a byte-identical copy (0x100426ab0) - it is the function the
+// Mission Control "+" button drives when the user adds a desktop, so calling it in-process
+// is the same operation, minus the XPC assertion.
+//
+// The helper receives the connection id as its first argument; the Dock obtains it from a
+// swift_once-guarded cache rather than SLSMainConnectionID(), which is what distinguishes
+// this route from a plain CGSSpaceCreate() call.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+uint64_t get_dock_cid_getter_offset(NSOperatingSystemVersion os_version) {
+    if (os_version.majorVersion == 27) {
+        // macOS 27.0 (Dock 2571.0.6.402): lazy connection-id getter @0x2c2aa8
+        // (swift_once -> swift_beginAccess -> ldr w0, [x19]).
+        return 0x2c0000;
+    }
+    return 0;
+}
+
+const char *get_dock_cid_getter_pattern(NSOperatingSystemVersion os_version) {
+    if (os_version.majorVersion == 27) {
+        // prologue + once-check + the adrp/add pair feeding the guarded global (0x41e174).
+        // Unique match @0x2c2aa8.
+        return "7F 23 03 D5 FF 03 01 D1 F4 4F 02 A9 FD 7B 03 A9 FD C3 00 91 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? F3 0A 00 90 73 D2 05 91";
+    }
+    return NULL;
+}
+
+uint64_t get_dock_space_create_offset(NSOperatingSystemVersion os_version) {
+    if (os_version.majorVersion == 27) {
+        // macOS 27.0 (Dock 2571.0.6.402): Swift helper @0x2bb62c. Called from 21 sites in
+        // the Dock; the user-space one (flags=0, type=0) sits at 0x1744cc.
+        return 0x2b0000;
+    }
+    return 0;
+}
+
+const char *get_dock_space_create_pattern(NSOperatingSystemVersion os_version) {
+    if (os_version.majorVersion == 27) {
+        // pacibsp / stack-check prologue + the fixed argument shuffling (x0-x5 into x19-x25).
+        // Unique match @0x2bb62c.
+        return "7F 23 03 D5 E6 03 1E AA ?? ?? ?? ?? FE 03 06 AA FD 7B 06 A9 FD 83 01 91 F6 03 05 AA F8 03 04 AA F9 03 03 AA F4 03 02 AA F3 03 01 AA F5 03 00 AA";
+    }
+    return NULL;
+}
+
+// macOS 27: the Dock calls its create helper with an empty [pid] array loaded from its own
+// literal pool (__swiftEmptyArrayStorage is a private Swift runtime singleton that dlsym()
+// cannot resolve). This pattern is the user-space call site - "(flags=0, type=0)" - which
+// sits immediately after that literal load, so the adrp+ldr pair can be decoded from it.
+uint64_t get_pids_array_site_offset(NSOperatingSystemVersion os_version) {
+    if (os_version.majorVersion == 27) {
+        return 0x170000;
+    }
+    return 0;
+}
+
+const char *get_pids_array_site_pattern(NSOperatingSystemVersion os_version) {
+    if (os_version.majorVersion == 27) {
+        // mov w1, #0x0 / mov w2, #0x0 / mov x3, x21 / mov x4, x22 / bl <create helper>
+        // Unique match @0x1744bc.
+        return "01 00 80 52 02 00 80 52 E3 03 15 AA E4 03 16 AA ?? ?? ?? 94";
+    }
     return NULL;
 }
