@@ -6,12 +6,25 @@
 
 ## Core Rules
 
-### R1: 会话初始化
+### R1: 会话初始化（渐进式加载）
 
 每次会话开始立即读取：
 
 1. `AGENTS.md` - 项目规则与约束（MUST READ FIRST）
-2. `memory-bank/` 下所有文件 - 当前状态与进度（缺失则按 `memory-bank/` 结构创建）
+2. 时间线层：`memory-bank/activeContext.md` + `memory-bank/progress.md`（缺失则按结构创建）
+
+**领域文件按任务相关性加载，不一次性全读**（大型系统的有效注意力是稀缺资源）：
+
+| 任务类型 | 需加载 |
+|---|---|
+| 系统升级后 SA 失效 / pattern 维护 / 定位新入口或单例 | `domains/dock-reverse-engineering/` |
+| 改 SA 能力、协议、属性位；排查握手/注入 | `domains/scripting-addition/` |
+| space 生命周期（create/destroy/move/focus）行为异常 | `domains/space-management/` |
+| 跨领域任务（如空间创建同时涉及定位与协议） | 先读 `domains/README.md` 路由，再按需展开 |
+
+`systemPatterns.md`（横切结构）、`techContext.md`（环境与 ABI）、`projectbrief.md` 在需要时读取。
+
+**回源原则**：不同事实回不同来源——当前 binary 行为以**实测**为准，代码契约以**源码**为准，历史原因以 `docs/` 证据链为准；不得用记忆替代实测。
 
 ### R2: 记忆更新（强制实时）
 
@@ -203,6 +216,8 @@ Must provide: purpose, rationale, impact assessment, alternatives.
 3. 完整性校验：归档前后总行数差 = 新增 shard 头行数（零丢失）
 4. 超限但无 30 天外条目时：**压缩措辞**而非删内容；仍超限则提出阈值修订（R13），不得靠删记忆达标
 
+**分层原则**：时间线（本规则）回答"最近发生了什么"；跨轮次可复用的判断进领域层（R19）。
+
 ### R13: AGENTS.md Self-Update (Enforced)
 
 Trigger: 规则漏洞 / 用户新约束 / 重复错误需固化。
@@ -284,6 +299,50 @@ git checkout ai-base
 流程：**先询问用户**是否沉淀 → 同意后用 skill-creator 创建 → 写入 `.agents/skills/`。
 禁止：自动写入 `.agents/`；未经确认把一次性结论固化成 skill；skill 属 AI 工作区，不触发项目版本号（R15）。
 
+### R19: 领域知识库（强制）
+
+**核心原则：知识按「领域」沉淀，不按「时间」堆积。** 领域专属的判断/契约/不变量不得只留在线性时间线里；固定结构的价值是**知识覆盖约束**（告诉 AI 至少必须理解哪些方面），而检索只能给出"可能相关"。
+
+**第一层永远是领域**（业务/技术能力面，如 `dock-reverse-engineering`、`scripting-addition`、`space-management`），禁止按文档类型建第一层。
+
+**每领域五件套**（缺一不可，建立即填实，禁止占位）：
+
+| 文件 | 职责 | 内容要求 |
+|---|---|---|
+| `meta.md` | 领域边界、代码入口、术语 | 必须含**别名与易混概念**（同物多名 / 同名异物），只看这一个就知道"归哪、从哪看起" |
+| `principles.md` | 不变量与第一性原理 | 能用来裁决新情况；写"为什么"，不写操作步骤 |
+| `scenarios.md` | 触发场景 → 判断 → 动作 | 遇到 X 该怎么做，不用重新推理；含排查顺序 |
+| `practices.md` | 具体做法、命令、参数、踩坑 | 可直接照做；**必须含反例与"为什么"** |
+| `references.md` | 契约、偏移/符号表、端点、路径 | 事实性查表，不含判断；**不复制他域完整知识**，只留引用 |
+
+**条目元数据（强制）**：每个领域文件头部标注知识状态，供系统升级后判定是否过期：
+
+```
+> **系统基线**：macOS 27.0 (26A428) · Dock 2571.0.6.402
+> **最后验证**：2026-09-15 · **状态**：已验证 | 含推论 | 方法论
+> **来源**：<命令 / 源码位置 / 文档链接>
+```
+
+- `已验证` = 本机实测或源码逐项核对；`含推论` = 有推理成分、**未**现场验证；`方法论` = 跨版本稳定，不随版本失效
+- 正文中的单条结论若为推论，须就地标注（如 `[推论]`），**不得把推断伪装成事实**；未知项显式登记为待确认
+
+**写回规则**：`docs/` 是证据链（逆向过程、LLDB 输出、日志），**确认后的结论必须写回领域文件**，不得只留在 docs 或时间线。
+
+**维护触发（代码/系统变化 → 必须复核的领域文件）**：
+
+| 变化 | 需复核 |
+|---|---|
+| macOS 大版本升级 | **全域复核**（先 `dock-reverse-engineering/`，再 `space-management/principles.md` 代际表） |
+| `src/osax/arm64_payload.m` / `x64_payload.m`（offset/pattern） | `dock-reverse-engineering/references.md`、`scenarios.md` |
+| `src/osax/payload.m`（能力、握手、日志） | `scripting-addition/{principles,references,practices}.md` |
+| `src/osax/common.h`（OSAX_VERSION / 属性位 / opcode） | `scripting-addition/references.md` |
+| `src/sa.[hm]`（daemon 侧能力） | `scripting-addition/practices.md`、`space-management/references.md` |
+| `src/space_manager.c` / `display_manager.c` | `space-management/{principles,scenarios}.md` |
+
+**生长规则**：按需建档（宁可少而实，禁止为凑结构建空领域）；新知识先归类再更新对应文件；`memory-bank/domains/README.md` 索引必须与目录同步；横切规范留 `systemPatterns.md` / `techContext.md`，领域专属判断进领域文件，**不得两处重复**。
+
+**红线**：❌ 占位文件 / `TODO: fill` / 空章节 ❌ 把领域文件当 changelog 用（版本流水账属 `progress.md`）❌ 与代码/契约不一致的表述（涉契约先只读核对源码）❌ 无元数据的领域文件；单文件 ≤200 行。
+
 ## Execution Flow
 
 ```
@@ -293,7 +352,7 @@ git checkout ai-base
 ↓
 代码修改（编辑前读全文、编辑后编译验证：R8；边界内不猜测：R6）
 ↓
-更新记忆（R2）+ 行数检查/归档（R12）
+更新记忆（R2）+ 行数检查/归档（R12）+ 跨轮次判断沉淀领域（R19）
 ↓
 清理临时文件与长驻进程（R10）
 ↓
@@ -315,16 +374,29 @@ git checkout ai-base
 
 ## Memory Bank Structure
 
+**时间线层**（回答"最近发生了什么"）：
+
 ```
 memory-bank/
 ├── projectbrief.md      核心目标与架构范围（≤50 行）
-├── techContext.md       工具链、私有 API、偏移表、SIP 要求（≤80 行）
-├── systemPatterns.md    设计模式：事件循环、窗口树、IPC、动态定位（≤80 行）
+├── techContext.md       工具链、私有 API、当前系统版本偏移表、SIP 要求（≤80 行）
+├── systemPatterns.md    横切设计模式：事件循环、窗口树、IPC、注入流程（≤80 行）
 ├── activeContext.md     当前工作焦点（≤150 行）
 ├── progress.md          阶段进度（≤100 行）
 └── archive/             冷数据归档（R12，唯一豁免行数限制；按需创建，禁止建空目录）
     ├── activeContext-YYYY-MM.md
     └── progress-YYYY-MM.md
+```
+
+**领域层**（回答"这里什么是真的、该怎么做"，R19 治理）：
+
+```
+memory-bank/domains/
+├── README.md                        领域索引（与目录同步）
+├── dock-reverse-engineering/        Dock/框架逆向：pattern、偏移、动态定位
+├── scripting-addition/              SA payload/loader、socket 协议、握手属性
+└── space-management/                空间创建/销毁/移动/聚焦语义与实现代际
+    └── 每领域五件套：meta.md / principles.md / scenarios.md / practices.md / references.md
 ```
 
 ## Quick Reference Card
@@ -333,6 +405,7 @@ memory-bank/
 |---|---|
 | 3+ 步骤 | 先建 todo（R9） |
 | 记忆文件超行数 | 归档而非删除（R12） |
+| 跨轮次可复用的判断 | 沉淀到领域文件（R19），不留在时间线 |
 | 代码变更 | 版本号同步 + 编译验证（R15 / R8） |
 | 提交/推送/pick | 当次授权 + 自检 + 分支拆分（R5 / R14） |
 | 修复类任务完成 | 报告 + 「待授权提交」后停（R5.5） |

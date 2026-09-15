@@ -55,6 +55,23 @@
 - **R14 分支管理与提交拆分**：ai-base → dev → master 只能逐级 cherry-pick（禁 merge/rebase/反向 pick）+ 功能/版本/AI 记忆三段提交顺序 + 校验清单
 - **R15 版本号管理**：五个版本号位置表（yabai.c / install.sh / common.h / CHANGELOG / yabai.1）+ 全局检查
 - **R12 记忆冷归档**：修剪 = 归档而非删除（`memory-bank/archive/`）
+- **R19 领域知识库**（补齐 R25 缺口）：新增 `memory-bank/domains/`，建 3 个领域（`dock-reverse-engineering` / `scripting-addition` / `space-management`），每领域五件套 `meta / principles / scenarios / practices / references` + `domains/README.md` 索引；同步把 `systemPatterns.md` / `techContext.md` 里的领域专属内容收敛为指针（R19「不得两处重复」）
+
+**领域层落点**：
+
+| 领域 | 承载的可复用判断 |
+|---|---|
+| `dock-reverse-engineering` | 稳定/不稳定字节判据、基线窗口语义（`0x1286a0` 首匹配）、单例识别三要素、系统升级适配七步流程、dyld cache 提取与语义画像脚本 |
+| `scripting-addition` | 属性位必须与真实能力一致、payload 改动必 bump `OSAX_VERSION`、代际分流不改协议、注入/重启由用户执行、沙箱静默失败 |
+| `space-management` | 空间创建三代实现表、display UUID 为主键、创建成功的不变量、SLS 与 Dock 模型双写、DPPM 通知 |
+
+**二轮补强（参照《架构师 Agent / 知识库体系》方法论，2026-09-15）**：
+
+- **R1 渐进式加载**：会话开始只读 `AGENTS.md` + 时间线层；领域文件按任务类型路由加载（新增路由表），并写明**回源原则**（binary 行为以实测为准 / 契约以源码为准 / 历史原因以 docs 为准）
+- **R19 条目元数据（强制）**：每个领域文件头部标注 `系统基线 / 最后验证 / 状态（已验证·含推论·方法论） / 来源`；正文推论就地标 `[推论]`，不得把推断伪装成事实
+- **R19 维护触发表**：macOS 大版本升级 → 全域复核；`arm64_payload.m` / `payload.m` / `common.h` / `sa.[hm]` / `space_manager.c` 改动 → 各自对应需复核的领域文件
+- **R19 写回规则**：`docs/` 只作证据链，确认后的结论必须写回领域文件
+- **meta 增「别名与易混概念」**：dock-RE（pattern/基线、入口/早退点、全局/单例、0 命中/不存在、Dock/DockCore/WindowManager）、SA（SA/osax、payload/loader、属性位/opcode、两个 socket、代际分流/协议变更）、space（space/desktop、spid/sid、UUID/CGDirectDisplayID、Spaces/ManagedSpace、user/fullscreen space）
 
 ## 已知设计限制 (不处理)
 

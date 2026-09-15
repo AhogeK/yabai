@@ -39,22 +39,17 @@ loader.m  → loader binary          ─┴→ xxd -i 内嵌到 yabai 二进制
 → Dock 启动时加载 loader，loader dlopen payload 到 Dock 进程内
 ```
 
-## Space Creation 三代实现（版本演进）
+## 领域层指针（细节见 `memory-bank/domains/`，R19）
 
-| 世代 | 实现 | 调用方式 |
-|------|------|---------|
-| ≤ 25 | Dock `addSpace` 函数 | `x0=new_space, x20=display_space`（asm 宏） |
-| 26 | Dock Swift `space_create_entry` | `x0=display_id, x20=Spaces self`（原子 asm + `blr`） |
-| 27 | **WindowManager.framework** `synchronouslyRequestCreateManagedSpace(displayUUID:)` | dlsym + Swift ABI（x20=self，x0/x1=String，错误 x21） |
+- **空间创建三代实现 / 空间不变量** → `domains/space-management/principles.md`
+- **pattern 编写、单例定位、版本适配流程** → `domains/dock-reverse-engineering/{principles,scenarios,practices}.md`
+- **SA 协议、属性位、版本门** → `domains/scripting-addition/{principles,practices,references}.md`
+- 本文件只保留**横切**结构（事件循环 / 窗口树 / IPC / 注入流程），其余不在此重复
 
-## macOS 26/27 动态定位模式
-
-- **Spaces 单例**: pattern（`doBindingCommand:display` 反汇编特征）→ `decode_adrp_add`；26 另有 DOUBLE-ANCHOR 兜底（搜索 `bl space_create_entry` 后回溯 adrp/add）
-- **DPPM 单例**: 26 为 setter 控制流指纹（cbnz+str）；27 指纹失效 → 退回 `DPRemoteConnection::_handleEvent:` pattern（`adrp+add+ldr` 融合）
-- **全局语义画像**: `dyld_info -fixups` 建 selector→字符串映射 → 扫描 `__objc_stubs` 得 stub→selector → 对 `__text` 做寄存器级抽象解释，统计"全局 × 方法名"定位单例归属
-
-### Manual UI Path (28 layers, macOS 26)
+## Manual UI Path (28 layers, macOS 26)
 
 ```
 RunLoop Source1 (HIServices) → mshPerform → ... → #05 (0x22abb8) array append
 ```
+
+（完整调用链与地址见 `docs/reverse-engineering-manual-path-complete-analysis-macos26.md`）
