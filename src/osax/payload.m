@@ -92,8 +92,89 @@ static uint64_t animation_time_addr;
 static uint64_t space_create_entry_fp;
 static bool macOSSequoia;
 
+// macOS 27+: space creation is owned by WindowManager.framework (linked into Dock).
+// Swift entry points are resolved by mangled name so no Dock offset is required.
+static void *wm_metadata_fp;
+static void *wm_shared_getter_fp;
+static void *wm_create_space_fp;
+static void *swift_string_from_objc_fp;
+static void *swift_error_release_fp;
+
 static pthread_t daemon_thread;
 static int daemon_sockfd;
+
+#ifdef __arm64__
+//
+// macOS 27 space creation support.
+//
+// The Dock stopped hosting the Swift space-create entry that yabai used on macOS 26
+// (0x1f07d4). On macOS 27 the operation lives in WindowManager.framework, which the Dock
+// links against and therefore has mapped in-process:
+//
+//   WindowManager.WindowManager.shared
+//       .synchronouslyRequestCreateManagedSpace(displayUUID: String?) throws -> UInt64
+//
+// Both entry points are Swift symbols, resolved by mangled name via dlsym, so no
+// Dock-specific offsets/patterns are needed for space creation.
+//
+
+// A Swift String is carried in two 64-bit words (_countAndFlagsBits, _object);
+// see asm__call_swift_string_from_objc / asm__call_wm_create_space.
+
+// static getter: metatype is passed as Swift self (x20), result returned in x0.
+#define asm__call_swift_static_getter(meta, func, out_obj)                          \
+    do {                                                                            \
+        __asm__ volatile (                                                          \
+            "mov x20, %[wm_meta]\n"                                                 \
+            "blr %[fp]\n"                                                           \
+            "mov %[out], x0\n"                                                      \
+            : [out] "=&r" (out_obj)                                                 \
+            : [wm_meta] "r" ((uintptr_t)(meta)), [fp] "r" ((uintptr_t)(func))       \
+            : "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7",                       \
+              "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15",                 \
+              "x16", "x17", "x19", "x20", "x21", "x30", "memory"                    \
+        );                                                                          \
+    } while (0)
+
+// String(NSString) initializer: input x0 = NSString, result x0/x1 = Swift String words.
+#define asm__call_swift_string_from_objc(nsstring, func, out_s0, out_s1)            \
+    do {                                                                            \
+        __asm__ volatile (                                                          \
+            "mov x0, %[ns]\n"                                                       \
+            "blr %[fp]\n"                                                           \
+            "mov %[s0], x0\n"                                                       \
+            "mov %[s1], x1\n"                                                       \
+            : [s0] "=&r" (out_s0), [s1] "=&r" (out_s1)                              \
+            : [ns] "r" ((uintptr_t)(nsstring)), [fp] "r" ((uintptr_t)(func))        \
+            : "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7",                       \
+              "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15",                 \
+              "x16", "x17", "x19", "x20", "x21", "x30", "memory"                    \
+        );                                                                          \
+    } while (0)
+
+// synchronouslyRequestCreateManagedSpace(displayUUID:) throws -> UInt64
+//   in:  x20 = WindowManager instance (Swift self), x0/x1 = Optional<String> words
+//   out: x0 = new space ID, x21 = swift_error* (non-NULL on failure)
+#define asm__call_wm_create_space(str0, str1, wm_self, func, out_spid, out_error)   \
+    do {                                                                            \
+        __asm__ volatile (                                                          \
+            "mov x21, #0\n"                                                         \
+            "mov x20, %[self]\n"                                                    \
+            "mov x0, %[s0]\n"                                                       \
+            "mov x1, %[s1]\n"                                                       \
+            "blr %[fp]\n"                                                           \
+            "mov %[spid], x0\n"                                                     \
+            "mov %[err], x21\n"                                                     \
+            : [spid] "=&r" (out_spid), [err] "=&r" (out_error)                      \
+            : [self] "r" ((uintptr_t)(wm_self)),                                    \
+              [s0] "r" ((uintptr_t)(str0)), [s1] "r" ((uintptr_t)(str1)),           \
+              [fp] "r" ((uintptr_t)(func))                                          \
+            : "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7",                       \
+              "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15",                 \
+              "x16", "x17", "x19", "x20", "x21", "x30", "memory"                    \
+        );                                                                          \
+    } while (0)
+#endif
 
 static void dump_class_info(Class c)
 {
@@ -424,6 +505,11 @@ static bool verify_os_version(NSOperatingSystemVersion os_version)
         NSLog(@"[yabai-sa] Detected Tahoe Preview... flagging 'macOSSequoia=true.'");
         macOSSequoia = true;
         return true; // Tahoe preview
+    } else if (os_version.majorVersion == 27) {
+
+        NSLog(@"[yabai-sa] Detected macOS 27... flagging 'macOSSequoia=true.'");
+        macOSSequoia = true;
+        return true; // macOS 27
     }
 
     NSLog(@"[yabai-sa] spaces functionality is only supported on macOS Monterey 12.0.0+, and Ventura 13.0.0+, Sonoma 14.0.0+, and Sequoia 15.0");
@@ -615,7 +701,7 @@ static void init_instances()
 
     // macOS 26: Dynamic address decoding for DPPM singleton
     // Uses ADRP+LDR pattern from setDesktopPictureManager function (FUN_10011cd90)
-    if (os_version.majorVersion >= 26) {
+    if (os_version.majorVersion >= 26 && dp_desktop_picture_manager == nil) {
         uint32_t *dppm_pattern = find_dppm_singleton_instructions(baseaddr, 0);
         if (dppm_pattern) {
             uintptr_t dppm_global_ptr = (uintptr_t)decode_adrp_ldr_pair(dppm_pattern);
@@ -659,6 +745,27 @@ static void init_instances()
             }
         } else {
             NSLog(@"[yabai-sa][SPACE] dock_spaces fallback: could not locate Spaces singleton instructions");
+        }
+    }
+
+    // macOS 27: space creation moved out of the Dock binary into WindowManager.framework.
+    // Resolve its Swift entry points by mangled name (the framework is linked into Dock,
+    // so RTLD_DEFAULT lookups resolve against the already loaded image).
+    if (os_version.majorVersion >= 27) {
+        dlopen("/System/Library/PrivateFrameworks/WindowManager.framework/Versions/A/WindowManager", RTLD_LAZY | RTLD_NOLOAD);
+        wm_metadata_fp            = dlsym(RTLD_DEFAULT, "$s13WindowManagerAACMa");
+        wm_shared_getter_fp       = dlsym(RTLD_DEFAULT, "$s13WindowManagerAAC6sharedABvgZ");
+        wm_create_space_fp        = dlsym(RTLD_DEFAULT, "$s13WindowManagerAAC38synchronouslyRequestCreateManagedSpace11displayUUIDs6UInt64VSSSg_tKF");
+        swift_string_from_objc_fp = dlsym(RTLD_DEFAULT, "$sSS10FoundationE36_unconditionallyBridgeFromObjectiveCySSSo8NSStringCSgFZ");
+        swift_error_release_fp    = dlsym(RTLD_DEFAULT, "swift_errorRelease");
+
+        if (wm_metadata_fp && wm_shared_getter_fp && wm_create_space_fp && swift_string_from_objc_fp) {
+            NSLog(@"[yabai-sa][WM] WindowManager entry points resolved (metadata=%p shared=%p createSpace=%p)",
+                  wm_metadata_fp, wm_shared_getter_fp, wm_create_space_fp);
+        } else {
+            wm_create_space_fp = NULL;
+            NSLog(@"[yabai-sa][WM] failed to resolve WindowManager symbols (metadata=%p shared=%p createSpace=%p stringBridge=%p); space creation will not work!",
+                  wm_metadata_fp, wm_shared_getter_fp, wm_create_space_fp, swift_string_from_objc_fp);
         }
     }
 #endif
@@ -841,7 +948,9 @@ static CGDirectDisplayID display_id_for_uuid(CFStringRef display_uuid)
 
 static void do_space_create(char *message)
 {
-    if (dock_spaces == nil) return;
+    // macOS 27 performs creation through WindowManager.framework and only needs the
+    // display UUID, so the Spaces singleton is not a hard requirement there.
+    if (dock_spaces == nil && wm_create_space_fp == NULL) return;
 
     uint64_t space_id;
     unpack(space_id);
@@ -900,6 +1009,45 @@ static void do_space_create(char *message)
         [retained release];
 
         NSLog(@"[yabai-sa][SPACE] space_create_entry returned");
+        CFRelease(display_uuid);
+        return;
+    }
+
+    // macOS 27: WindowManager.framework owns space creation
+    // (WindowManager.WindowManager.synchronouslyRequestCreateManagedSpace(displayUUID:)).
+    // The framework is loaded in Dock, so the Swift entry points are called in-process:
+    //   x20 = WindowManager.shared instance, x0/x1 = Optional<String> display UUID,
+    //   x0 = new space ID, x21 = swift_error* (non-NULL when the request failed).
+    if (wm_create_space_fp != NULL) {
+        uintptr_t string_word0 = 0;
+        uintptr_t string_word1 = 0;
+
+        if (swift_string_from_objc_fp != NULL && display_uuid != NULL) {
+            asm__call_swift_string_from_objc((__bridge NSString *)display_uuid, swift_string_from_objc_fp, string_word0, string_word1);
+        }
+
+        void *wm_instance = NULL;
+        void *wm_metadata = ((void *(*)(uint32_t)) wm_metadata_fp)(0);
+        asm__call_swift_static_getter(wm_metadata, wm_shared_getter_fp, wm_instance);
+
+        NSLog(@"[yabai-sa][WM] calling synchronouslyRequestCreateManagedSpace(uuid=%s) instance=%p",
+              display_uuid != NULL ? [(__bridge NSString *)display_uuid UTF8String] : "(nil)", wm_instance);
+
+        if (wm_instance != NULL) {
+            uint64_t new_space_id = 0;
+            uint64_t swift_error = 0;
+            asm__call_wm_create_space(string_word0, string_word1, wm_instance, wm_create_space_fp, new_space_id, swift_error);
+
+            NSLog(@"[yabai-sa][WM] synchronouslyRequestCreateManagedSpace returned (spid=%llu, error=%p)",
+                  new_space_id, (void *)swift_error);
+
+            if (swift_error != 0 && swift_error_release_fp != NULL) {
+                ((void (*)(uint64_t)) swift_error_release_fp)(swift_error);
+            }
+        } else {
+            NSLog(@"[yabai-sa][WM] ERROR: WindowManager.shared instance is nil, aborting");
+        }
+
         CFRelease(display_uuid);
         return;
     }
@@ -1299,7 +1447,9 @@ static void do_handshake(int sockfd)
 
     if (dock_spaces != nil)                attrib |= OSAX_ATTRIB_DOCK_SPACES;
     if (dp_desktop_picture_manager != nil) attrib |= OSAX_ATTRIB_DPPM;
-    if (add_space_fp)                      attrib |= OSAX_ATTRIB_ADD_SPACE;
+    // Space creation moved from the Dock addSpace function (<=25), to the Swift
+    // space_create_entry (26.x), to WindowManager.framework (27+).
+    if (add_space_fp || space_create_entry_fp || wm_create_space_fp) attrib |= OSAX_ATTRIB_ADD_SPACE;
     if (remove_space_fp)                   attrib |= OSAX_ATTRIB_REM_SPACE;
     if (move_space_fp)                     attrib |= OSAX_ATTRIB_MOV_SPACE;
     if (set_front_window_fp)               attrib |= OSAX_ATTRIB_SET_WINDOW;
