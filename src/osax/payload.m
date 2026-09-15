@@ -90,58 +90,30 @@ static uint64_t move_space_fp;
 static uint64_t set_front_window_fp;
 static uint64_t animation_time_addr;
 static uint64_t space_create_entry_fp;
+// macOS 27 create path (arm64 only): the Dock's own Swift space-creation helper, the
+// connection-id getter feeding it, and the Swift runtime values it needs.
+#ifdef __arm64__
+static uint64_t dock_cid_getter_fp;
+static void *swift_empty_array_storage;   // __swiftEmptyArrayStorage (literal pool slot)
+static void *swift_string_from_objc_fp;   // String(NSString) bridge
+#endif
+static uint64_t dock_space_create_fp;     // needed unguarded: reported in the handshake attributes
 static bool macOSSequoia;
 
 // macOS 27+: space creation is owned by WindowManager.framework (linked into Dock).
 // Swift entry points are resolved by mangled name so no Dock offset is required.
-static void *wm_metadata_fp;
-static void *wm_shared_getter_fp;
-static void *wm_create_space_fp;
-static void *swift_string_from_objc_fp;
-static void *swift_error_release_fp;
 
 static pthread_t daemon_thread;
 static int daemon_sockfd;
 
 #ifdef __arm64__
-//
-// macOS 27 space creation support.
-//
-// The Dock stopped hosting the Swift space-create entry that yabai used on macOS 26
-// (0x1f07d4). On macOS 27 the operation lives in WindowManager.framework, which the Dock
-// links against and therefore has mapped in-process:
-//
-//   WindowManager.WindowManager.shared
-//       .synchronouslyRequestCreateManagedSpace(displayUUID: String?) throws -> UInt64
-//
-// Both entry points are Swift symbols, resolved by mangled name via dlsym, so no
-// Dock-specific offsets/patterns are needed for space creation.
-//
-
-// A Swift String is carried in two 64-bit words (_countAndFlagsBits, _object);
-// see asm__call_swift_string_from_objc / asm__call_wm_create_space.
-
-// static getter: metatype is passed as Swift self (x20), result returned in x0.
-#define asm__call_swift_static_getter(meta, func, out_obj)                          \
-    do {                                                                            \
-        __asm__ volatile (                                                          \
-            "mov x20, %[wm_meta]\n"                                                 \
-            "blr %[fp]\n"                                                           \
-            "mov %[out], x0\n"                                                      \
-            : [out] "=&r" (out_obj)                                                 \
-            : [wm_meta] "r" ((uintptr_t)(meta)), [fp] "r" ((uintptr_t)(func))       \
-            : "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7",                       \
-              "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15",                 \
-              "x16", "x17", "x19", "x20", "x21", "x30", "memory"                    \
-        );                                                                          \
-    } while (0)
-
 // String(NSString) initializer: input x0 = NSString, result x0/x1 = Swift String words.
 #define asm__call_swift_string_from_objc(nsstring, func, out_s0, out_s1)            \
     do {                                                                            \
         __asm__ volatile (                                                          \
             "mov x0, %[ns]\n"                                                       \
-            "blr %[fp]\n"                                                           \
+            "mov x16, %[fp]\n"                                                      \
+            "blraaz x16\n"                                                          \
             "mov %[s0], x0\n"                                                       \
             "mov %[s1], x1\n"                                                       \
             : [s0] "=&r" (out_s0), [s1] "=&r" (out_s1)                              \
@@ -151,69 +123,57 @@ static int daemon_sockfd;
               "x16", "x17", "x19", "x20", "x21", "x30", "memory"                    \
         );                                                                          \
     } while (0)
-
-// synchronouslyRequestCreateManagedSpace(displayUUID:) throws -> UInt64
-//   in:  x20 = WindowManager instance (Swift self), x0/x1 = Optional<String> words
-//   out: x0 = new space ID, x21 = swift_error* (non-NULL on failure)
-#define asm__call_wm_create_space(str0, str1, wm_self, func, out_spid, out_error)   \
+// macOS 27 Dock-local space creation helper - a Swift free function (no self):
+//   helper(cid, flags, type, displayUUID: String, pids: [pid]) -> new space ID
+// The helper builds @{@"type", @"uuid", @"pid"} and calls CGSSpaceCreate with the
+// connection id it is handed. WindowManager.app contains a byte-identical copy
+// (0x100426ab0) - it is the function the Mission Control "+" button drives, which is
+// why calling it needs no WindowManager admin-XPC assertion.
+// The address comes from a pattern scan (unsigned), so a plain `blr` is correct here;
+// only dlsym()'d pointers need the authenticated `blraaz`.
+// Pattern-scanned Dock functions are reachable through a *plain* `blr`: the address is
+// raw (unsigned), so an authenticated branch (`blraaz`, which clang emits for C function
+// pointer calls on arm64e) would authenticate a value that was never signed and fault
+// with PAC_EXCEPTION. This is the mirror image of the dlsym() case.
+// Same rule for the older pattern-scanned entry points (removeSpace / setFrontWindow):
+// they are raw addresses, so the CALL must be an unsigned branch (`blr`). clang emits
+// `braaz` for every C-level function pointer call on arm64e - verified on this toolchain:
+//   uint64_t raw; ((void(*)(void)) raw)();   ->  braaz x0   (faults)
+#define asm__call_dock_cid_getter(func, out_cid)                                    \
     do {                                                                            \
         __asm__ volatile (                                                          \
-            "mov x21, #0\n"                                                         \
-            "mov x20, %[self]\n"                                                    \
-            "mov x0, %[s0]\n"                                                       \
-            "mov x1, %[s1]\n"                                                       \
             "blr %[fp]\n"                                                           \
-            "mov %[spid], x0\n"                                                     \
-            "mov %[err], x21\n"                                                     \
-            : [spid] "=&r" (out_spid), [err] "=&r" (out_error)                      \
-            : [self] "r" ((uintptr_t)(wm_self)),                                    \
-              [s0] "r" ((uintptr_t)(str0)), [s1] "r" ((uintptr_t)(str1)),           \
-              [fp] "r" ((uintptr_t)(func))                                          \
+            "mov %w[cid_v], w0\n"                                                   \
+            : [cid_v] "=&r" (out_cid)                                               \
+            : [fp] "r" ((uintptr_t)(func))                                          \
             : "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7",                       \
               "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15",                 \
               "x16", "x17", "x19", "x20", "x21", "x30", "memory"                    \
         );                                                                          \
     } while (0)
+
+#define asm__call_dock_space_create(cid, flags, type, str0, str1, pids, func, out_spid)  \
+    do {                                                                                 \
+        __asm__ volatile (                                                               \
+            "mov w0, %w[cid_v]\n"                                                       \
+            "mov w1, %w[flags_v]\n"                                                     \
+            "mov w2, %w[type_v]\n"                                                      \
+            "mov x3, %[s0]\n"                                                           \
+            "mov x4, %[s1]\n"                                                           \
+            "mov x5, %[pids_v]\n"                                                       \
+            "blr %[fp]\n"                                                               \
+            "mov %[spid], x0\n"                                                         \
+            : [spid] "=&r" (out_spid)                                                     \
+            : [cid_v] "r" ((uint32_t)(cid)), [flags_v] "r" ((uint32_t)(flags)),           \
+              [type_v] "r" ((uint32_t)(type)),                                            \
+              [s0] "r" ((uintptr_t)(str0)), [s1] "r" ((uintptr_t)(str1)),                 \
+              [pids_v] "r" ((uintptr_t)(pids)), [fp] "r" ((uintptr_t)(func))              \
+            : "x0", "x1", "x2", "x3", "x4", "x5", "x6", "x7",                             \
+              "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15",                       \
+              "x16", "x17", "x19", "x20", "x21", "x30", "memory"                          \
+        );                                                                                \
+    } while (0)
 #endif
-
-static void dump_class_info(Class c)
-{
-    const char *name = class_getName(c);
-    unsigned int count = 0;
-
-    Ivar *ivar_list = class_copyIvarList(c, &count);
-    for (int i = 0; i < count; i++) {
-        Ivar ivar = ivar_list[i];
-        const char *ivar_name = ivar_getName(ivar);
-        NSLog(@"%s ivar: %s", name, ivar_name);
-    }
-    if (ivar_list) free(ivar_list);
-
-    objc_property_t *property_list = class_copyPropertyList(c, &count);
-    for (int i = 0; i < count; i++) {
-        objc_property_t property = property_list[i];
-        const char *prop_name = property_getName(property);
-        NSLog(@"%s property: %s", name, prop_name);
-    }
-    if (property_list) free(property_list);
-
-    Method *method_list = class_copyMethodList(c, &count);
-    for (int i = 0; i < count; i++) {
-        Method method = method_list[i];
-        const char *method_name = sel_getName(method_getName(method));
-        NSLog(@"%s method: %s", name, method_name);
-    }
-    if (method_list) free(method_list);
-}
-
-static Class dump_class_info_by_name(const char *name)
-{
-    Class c = objc_getClass(name);
-    if (c != nil) {
-        dump_class_info(c);
-    }
-    return c;
-}
 
 static uint64_t static_base_address(void)
 {
@@ -415,7 +375,7 @@ static uint64_t hex_find_seq(uint64_t baddr, const char *c_pattern)
     memset(buffer_b, 0, sizeof(buffer_b));
 
     char *pattern = (char *) c_pattern + 1;
-    for (int i = 0; i < pattern_length; ++i) {
+    for (uint64_t i = 0; i < pattern_length; ++i) {
         char c = pattern[-1];
         if (c == '?') {
             buffer_b[i] = 1;
@@ -430,7 +390,7 @@ static uint64_t hex_find_seq(uint64_t baddr, const char *c_pattern)
     }
 
 loop:
-    for (int counter = 0; counter < pattern_length; ++counter) {
+    for (uint64_t counter = 0; counter < pattern_length; ++counter) {
         if ((buffer_b[counter] == 0) && (((char *)addr)[counter] != buffer_a[counter])) {
             addr = (uint64_t)((char *)addr + 1);
             if (addr - baddr < 0x1286a0) {
@@ -599,7 +559,9 @@ static void init_instances()
 #endif
     }
     }  // End wrap of asmvik's dppm block
-    dppm_done: ;  // Empty statement required after label in C
+#ifdef __arm64__
+    dppm_done: ;  // Empty statement required after label in C (arm64-only: its goto lives in the arm64 branch above)
+#endif
 
     uint64_t add_space_addr = hex_find_seq(baseaddr + get_add_space_offset(os_version), get_add_space_pattern(os_version));
     if (add_space_addr == 0x0) {
@@ -748,24 +710,41 @@ static void init_instances()
         }
     }
 
-    // macOS 27: space creation moved out of the Dock binary into WindowManager.framework.
-    // Resolve its Swift entry points by mangled name (the framework is linked into Dock,
-    // so RTLD_DEFAULT lookups resolve against the already loaded image).
+    // macOS 27 create path: the Dock's own create helper, the connection-id getter feeding it,
+    // and the Swift String(NSString) bridge. The WindowManager admin-XPC symbols that used to
+    // be resolved here are gone - that route never worked (see do_space_create).
     if (os_version.majorVersion >= 27) {
-        dlopen("/System/Library/PrivateFrameworks/WindowManager.framework/Versions/A/WindowManager", RTLD_LAZY | RTLD_NOLOAD);
-        wm_metadata_fp            = dlsym(RTLD_DEFAULT, "$s13WindowManagerAACMa");
-        wm_shared_getter_fp       = dlsym(RTLD_DEFAULT, "$s13WindowManagerAAC6sharedABvgZ");
-        wm_create_space_fp        = dlsym(RTLD_DEFAULT, "$s13WindowManagerAAC38synchronouslyRequestCreateManagedSpace11displayUUIDs6UInt64VSSSg_tKF");
         swift_string_from_objc_fp = dlsym(RTLD_DEFAULT, "$sSS10FoundationE36_unconditionallyBridgeFromObjectiveCySSSo8NSStringCSgFZ");
-        swift_error_release_fp    = dlsym(RTLD_DEFAULT, "swift_errorRelease");
 
-        if (wm_metadata_fp && wm_shared_getter_fp && wm_create_space_fp && swift_string_from_objc_fp) {
-            NSLog(@"[yabai-sa][WM] WindowManager entry points resolved (metadata=%p shared=%p createSpace=%p)",
-                  wm_metadata_fp, wm_shared_getter_fp, wm_create_space_fp);
+        dock_cid_getter_fp = hex_find_seq(baseaddr + get_dock_cid_getter_offset(os_version),
+                                          get_dock_cid_getter_pattern(os_version));
+        NSLog(@"[yabai-sa][SPACE] dock connection-id getter %s (0x%llX)",
+              dock_cid_getter_fp != 0 ? "found" : "NOT found", dock_cid_getter_fp);
+
+        dock_space_create_fp = hex_find_seq(baseaddr + get_dock_space_create_offset(os_version),
+                                            get_dock_space_create_pattern(os_version));
+        NSLog(@"[yabai-sa][SPACE] dock space-create helper %s (0x%llX)",
+              dock_space_create_fp != 0 ? "found" : "NOT found", dock_space_create_fp);
+
+        // The empty [pid] array handed to that helper is a private Swift runtime singleton:
+        // dlsym() cannot resolve it on 27.0, so decode the literal pool slot the Dock itself
+        // loads, using the user-space call site as the anchor.
+        swift_empty_array_storage = NULL;
+        uint64_t pids_site = hex_find_seq(baseaddr + get_pids_array_site_offset(os_version),
+                                          get_pids_array_site_pattern(os_version));
+        if (pids_site != 0) {
+            uint32_t adrp = 0, ldr = 0;
+            memcpy(&adrp, (void *)(pids_site - 8), sizeof(adrp));
+            memcpy(&ldr,  (void *)(pids_site - 4), sizeof(ldr));
+            int64_t imm = (((adrp >> 5) & 0x7ffff) << 2) | ((adrp >> 29) & 3);
+            if (imm & (1 << 20)) imm -= 1 << 21;
+            uint64_t page = ((pids_site - 8) & ~0xfffULL) + ((uint64_t)imm << 12);
+            uint64_t slot = page + (((ldr >> 10) & 0xfff) * 8);
+            swift_empty_array_storage = *(void **)slot;
+            NSLog(@"[yabai-sa][SPACE] empty pid array singleton = %p (call site 0x%llX, slot 0x%llX)",
+                  swift_empty_array_storage, pids_site, slot);
         } else {
-            wm_create_space_fp = NULL;
-            NSLog(@"[yabai-sa][WM] failed to resolve WindowManager symbols (metadata=%p shared=%p createSpace=%p stringBridge=%p); space creation will not work!",
-                  wm_metadata_fp, wm_shared_getter_fp, wm_create_space_fp, swift_string_from_objc_fp);
+            NSLog(@"[yabai-sa][SPACE] empty pid array call site NOT found");
         }
     }
 #endif
@@ -905,6 +884,10 @@ static void do_space_destroy(char *message)
     id display_space = display_space_for_display_uuid(display_uuid);
 
     dispatch_sync(dispatch_get_main_queue(), ^{
+        // remove_space_fp was signed with ptrauth_sign_unauthenticated (see init_instances),
+        // so it must be branched to with an *authenticated* branch - exactly what the compiler
+        // emits for a C call on arm64e. Raw, unsigned pattern addresses (the macOS 27 create
+        // helper / cid getter) are the opposite case and need a plain `blr`.
         ((remove_space_call) remove_space_fp)(space, display_space, dock_spaces, space_id, space_id);
     });
 
@@ -917,6 +900,7 @@ static void do_space_destroy(char *message)
     CFRelease(display_uuid);
 }
 
+#ifdef __arm64__
 // Convert display UUID string to CGDirectDisplayID
 // Uses CoreGraphics UUID API (works in Dock sandbox)
 static CGDirectDisplayID display_id_for_uuid(CFStringRef display_uuid)
@@ -945,12 +929,13 @@ static CGDirectDisplayID display_id_for_uuid(CFStringRef display_uuid)
     NSLog(@"[yabai-sa][SPACE] WARNING: no display matched UUID, falling back to main display");
     return CGMainDisplayID();
 }
+#endif  // __arm64__ (display_id_for_uuid is only used by the arm64 create path)
 
 static void do_space_create(char *message)
 {
-    // macOS 27 performs creation through WindowManager.framework and only needs the
-    // display UUID, so the Spaces singleton is not a hard requirement there.
-    if (dock_spaces == nil && wm_create_space_fp == NULL) return;
+    // The macOS 27 path drives the Dock's own create helper and only needs the display UUID,
+    // so the Spaces singleton is not a hard requirement there.
+    if (dock_spaces == nil && dock_space_create_fp == 0) return;
 
     uint64_t space_id;
     unpack(space_id);
@@ -1018,7 +1003,7 @@ static void do_space_create(char *message)
     // The framework is loaded in Dock, so the Swift entry points are called in-process:
     //   x20 = WindowManager.shared instance, x0/x1 = Optional<String> display UUID,
     //   x0 = new space ID, x21 = swift_error* (non-NULL when the request failed).
-    if (wm_create_space_fp != NULL) {
+    if (dock_space_create_fp != 0) {
         uintptr_t string_word0 = 0;
         uintptr_t string_word1 = 0;
 
@@ -1026,28 +1011,56 @@ static void do_space_create(char *message)
             asm__call_swift_string_from_objc((__bridge NSString *)display_uuid, swift_string_from_objc_fp, string_word0, string_word1);
         }
 
-        void *wm_instance = NULL;
-        void *wm_metadata = ((void *(*)(uint32_t)) wm_metadata_fp)(0);
-        asm__call_swift_static_getter(wm_metadata, wm_shared_getter_fp, wm_instance);
-
-        NSLog(@"[yabai-sa][WM] calling synchronouslyRequestCreateManagedSpace(uuid=%s) instance=%p",
-              display_uuid != NULL ? [(__bridge NSString *)display_uuid UTF8String] : "(nil)", wm_instance);
-
-        if (wm_instance != NULL) {
+        // macOS 27: the Dock's own Swift helper is the same code the WindowManager
+        // server runs for the Mission Control "+" button (byte-identical function).
+        // Called in-process with the Dock's connection id, so no WindowManager admin-XPC
+        // assertion is involved (that route never worked and has been removed).
+        //   helper(cid, flags=0, type=0 /* user space */, String(displayUUID), [])
+        if (dock_space_create_fp != 0 && swift_empty_array_storage != NULL) {
+            // swift_empty_array_storage MUST be the real singleton: on the empty-array path the
+            // helper releases it and reads [ptr+0x10] as the element count, so a NULL or
+            // synthetic pointer faults inside the Dock.
             uint64_t new_space_id = 0;
-            uint64_t swift_error = 0;
-            asm__call_wm_create_space(string_word0, string_word1, wm_instance, wm_create_space_fp, new_space_id, swift_error);
+            int cid = 0;
 
-            NSLog(@"[yabai-sa][WM] synchronouslyRequestCreateManagedSpace returned (spid=%llu, error=%p)",
-                  new_space_id, (void *)swift_error);
+            NSLog(@"[yabai-sa][SPACE] dock space-create helper: entry=%llx getter=%llx uuid=%s",
+                  dock_space_create_fp, dock_cid_getter_fp,
+                  display_uuid != NULL ? [(__bridge NSString *)display_uuid UTF8String] : "(nil)");
 
-            if (swift_error != 0 && swift_error_release_fp != NULL) {
-                ((void (*)(uint64_t)) swift_error_release_fp)(swift_error);
+            if (dock_cid_getter_fp != 0) {
+                asm__call_dock_cid_getter(dock_cid_getter_fp, cid);
+            } else {
+                cid = SLSMainConnectionID();
             }
-        } else {
-            NSLog(@"[yabai-sa][WM] ERROR: WindowManager.shared instance is nil, aborting");
+
+            NSLog(@"[yabai-sa][SPACE] dock cid resolved to %d (SLSMainConnectionID=%d)",
+                  cid, SLSMainConnectionID());
+
+            // Every Dock call site of this helper runs on the main thread (the 26-generation
+            // space_create_entry call did the same), so hop there before invoking it.
+            uint64_t *spid_out = &new_space_id;
+            dispatch_sync(dispatch_get_main_queue(), ^{
+                // Blocks capture by value, so the asm output target stays local here and the
+                // result is written out through the captured pointer.
+                uint64_t spid = 0;
+                asm__call_dock_space_create(cid, 0, 0, string_word0, string_word1,
+                                            swift_empty_array_storage, dock_space_create_fp, spid);
+                *spid_out = spid;
+            });
+
+            NSLog(@"[yabai-sa][SPACE] dock space-create helper returned space id %llu", new_space_id);
+            if (new_space_id != 0) {
+                CFRelease(display_uuid);
+                return;
+            }
         }
 
+        // The admin-XPC route (WindowManager.synchronouslyRequestCreateManagedSpace + the
+        // layout-control assertion) was implemented in 7.1.28-7.1.31 and never worked: the
+        // service gates mutations behind per-connection assertions the Dock cannot obtain.
+        // Removed rather than kept as a dead fallback - see
+        // docs/reverse-engineering-macos27-space-create.md section 6.
+        NSLog(@"[yabai-sa][SPACE] dock space-create helper failed, giving up");
         CFRelease(display_uuid);
         return;
     }
@@ -1301,6 +1314,7 @@ static void do_window_focus(char *message)
     SLSGetWindowOwner(SLSMainConnectionID(), wid, &window_connection);
     SLSGetConnectionPSN(SLSMainConnectionID(), &window_psn);
 
+    // set_front_window_fp is signed (see init_instances) -> authenticated branch via a C call.
     ((focus_window_call) set_front_window_fp)(window_psn, wid);
 }
 
@@ -1449,7 +1463,7 @@ static void do_handshake(int sockfd)
     if (dp_desktop_picture_manager != nil) attrib |= OSAX_ATTRIB_DPPM;
     // Space creation moved from the Dock addSpace function (<=25), to the Swift
     // space_create_entry (26.x), to WindowManager.framework (27+).
-    if (add_space_fp || space_create_entry_fp || wm_create_space_fp) attrib |= OSAX_ATTRIB_ADD_SPACE;
+    if (add_space_fp || space_create_entry_fp || dock_space_create_fp) attrib |= OSAX_ATTRIB_ADD_SPACE;
     if (remove_space_fp)                   attrib |= OSAX_ATTRIB_REM_SPACE;
     if (move_space_fp)                     attrib |= OSAX_ATTRIB_MOV_SPACE;
     if (set_front_window_fp)               attrib |= OSAX_ATTRIB_SET_WINDOW;
@@ -1556,6 +1570,7 @@ static inline bool read_message(int sockfd, char *message)
 
 static void *handle_connection(void *unused)
 {
+    (void) unused;
     for (;;) {
         int sockfd = accept(daemon_sockfd, NULL, 0);
         if (sockfd == -1) continue;
