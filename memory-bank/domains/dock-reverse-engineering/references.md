@@ -18,6 +18,9 @@
 | `fix_animation` base / 命中 | 0x250000 | 0x250000 | **0x220000 / 0x227508** |
 | `set_front_window` base / 命中 | 0x10000 | 0x10000 | **0x10000 / 0x192bc**（pattern 首字节改通配） |
 | `space_create_entry` | 0x1f07d8 | **0x1f07d4**（pacibsp 前移 4 字节） | **不存在** → 走 `WindowManager.framework` |
+| `dock_space_create` helper | — | — | **0x2b0000 / 0x2bb62c**（Swift helper，21 处调用点；用户空间调用点 0x1744cc = flags0/type0） |
+| `dock_cid_getter` | — | — | **0x2c0000 / 0x2c2aa8**（swift_once 守卫的 cid 缓存，全局 0x41e174） |
+| `pids_array_site`（空 pid 数组调用点） | — | — | **0x170000 / 0x1744bc** → 回溯 adrp+ldr 得 literal slot **0x3c3998**（`__swiftEmptyArrayStorage`，dlsym 取不到） |
 | Spaces 单例全局 | 0x488028 | 0x488028 | 0x100409bb0 |
 | DPPM 单例全局 | 0x4880d0 | 0x4880d0 | 0x100409c50 |
 
@@ -36,7 +39,8 @@
 dock_spaces (26/27) : ?8 ?? ?? ?? 08 ?? ?? 91 00 01 40 F9 E2 03 13 AA ?? ?? ?? 94 ?? ?? ?? ?? 08
 dppm        (26/27) : ?? ?? 00 ?? 08 ?? ?? 91 00 01 40 F9 E2 03 16 AA E3 03 19 AA ?? ?? ?? 94
 fix_animation (26/27): 00 10 6A 1E A8 ?? ?? D1 ?? 01 ?? F8
-set_front_window (27): ?? ?? ?? 34 7F 23 03 D5 FF C3 01 D1 F6 57 04 A9 F4 4F 05 A9 FD 7B 06 A9 FD 83 01 91
+set_front_window (27): ?? ?? ?? 34 7F 23 03 D5 FF C3 01 D1 F6 57 04 A9 F4 4F 05 A9 FD 7B 06 A9 FD 83 01 91dock_space_create (27): 7F 23 03 D5 E6 03 1E AA ?? ?? ?? ?? FE 03 06 AA FD 7B 06 A9 FD 83 01 91 F6 03 05 AA F8 03 04 AA F9 03 03 AA F4 03 02 AA F3 03 01 AA F5 03 00 AA
+dock_cid_getter   (27): 7F 23 03 D5 FF 03 01 D1 F4 4F 02 A9 FD 7B 03 A9 FD C3 00 91 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? F3 0A 00 90 73 D2 05 91pids_array_site   (27): 01 00 80 52 02 00 80 52 E3 03 15 AA E4 03 16 AA ?? ?? ?? 94
 ```
 
 ## WindowManager.framework（macOS 27，导出符号，dlsym 名称去掉前导下划线）

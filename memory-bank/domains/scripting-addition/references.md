@@ -47,3 +47,11 @@
 | `yabai --load-sa` | 安装/更新 SA（版本不匹配 → 重装 payload + 重启 Dock；**AI 不代执行**） |
 | `yabai --uninstall-sa` | 卸载 SA |
 | `yabai --restart-service` | 重启 yabai 服务（涉及 Accessibility 授权，**用户执行**） |
+
+## 属性位与版本（macOS 27）
+
+| 项 | 值 | 说明 |
+|---|---|---|
+| `OSAX_ATTRIB_ADD_SPACE` | 0x04 | macOS 27 上由 `dock_space_create_fp`（Dock 内部 helper）满足；G3 的 `wm_create_space_fp` 仍在但**断言门不可用**，仅作回退 |
+| `OSAX_VERSION` | 2.1.38 | 7.1.34；payload 任一次改动都要 bump（R15） |
+| 27 新增解析项 | `dock_cid_getter_fp` / `dock_space_create_fp` / `swift_empty_array_storage` | 前两者 pattern 定位，第三者 literal pool 解码 |

@@ -42,6 +42,6 @@
 |---|---|---|---|---|
 | ≤ 15 | Dock `addSpace` | Dock `removeSpace` | Dock `moveSpace` | pattern 按版本分段 |
 | 26.0–26.6 | Dock Swift `space_create_entry`（26.0 `0x1f07d8`；26.6 `0x1f07d4`） | Dock `removeSpace` | Dock `moveSpace` | `dock_spaces` 双路定位 |
-| **27.0** | **`WindowManager.framework`** | Dock `removeSpace`（pattern 命中 0x18b9a0） | Dock `moveSpace`（0x18c554） | 创建不再依赖 Dock 偏移 |
+| **27.0** | **Dock 内部 helper `0x2bb62c`（G3′，已实现）**；`WindowManager.framework` 的 `synchronouslyRequestCreateManagedSpace`（G3，断言门不可用） | Dock `removeSpace`（pattern 命中 0x18b9a0） | Dock `moveSpace`（0x18c554） | 创建不再依赖 Dock 偏移 |
 
 入口地址/基线与单例全局见 `dock-reverse-engineering/references.md`。

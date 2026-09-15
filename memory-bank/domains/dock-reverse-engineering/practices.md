@@ -49,8 +49,15 @@ dyld_info -exports <framework path> | awk '{print $2}' | xcrun swift-demangle
 ## 6. 内联汇编宏（Swift 调用）
 
 - 操作数名**不得与宏参数同名**：预处理器会把操作数段里的参数替换掉，而字符串 `%[name]` 不替换 → clang 报 `unknown symbolic operand name`
-- 单块 `asm volatile` + `blr` + 完整 clobber（`x0..x17`、`x19..`、`x20`/`x21`、`x30`、`memory`）
+- 单块 `asm volatile` + `blr`/`blraaz` + 完整 clobber（`x0..x17`、`x19..`、`x20`/`x21`、`x30`、`memory`）
 - 调用前清零错误寄存器（如 Swift throws 的 `x21`），调用后读取
+- **间接调用必须按指针来源选择指令**（arm64e）：
+  | 指针来源 | 状态 | 调用方式 |
+  |---|---|---|
+  | `dlsym()`、取函数地址（`&fn`） | **已签名** | `mov x16, fn` → `blraaz x16`，或交给 C 函数指针调用（编译器生成同样的 `blraaz`） |
+  | 自己算的 `baseaddr + offset`（pattern 命中） | 未签名 | 裸 `blr`；或先 `ptrauth_sign_unauthenticated(ptr, ptrauth_key_asia, 0)` 再 `blraaz` |
+  - 混用即崩：裸 `blr` 调已签名指针 → `PAC_EXCEPTION` 杀进程；对已签名指针再签一次 → 同样失败
+  - 验证方法（无需 Dock）：写一个 arm64e 测试程序 `dlopen` 目标框架 + `dlsym` + 复刻寄存器序列，跑通再进 Dock
 
 ## 7. 构建坑
 

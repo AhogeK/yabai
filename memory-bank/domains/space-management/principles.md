@@ -11,6 +11,7 @@
 | G1 | ≤ 25 | Dock `addSpace` 函数 | `x0` = new_space、`x20` = display_space（insert-after 语义） |
 | G2 | 26.x | Dock 内 Swift `space_create_entry` | `x0` = display_id、`x20` = Spaces 单例；入口随版本漂移（26.6 → `0x1f07d4`） |
 | G3 | **27+** | `WindowManager.framework`：`synchronouslyRequestCreateManagedSpace(displayUUID:)` | 框架导出符号（dlsym），`x20` = WM 实例、`x0/x1` = UUID 字符串、`x21` = 错误、返回新 spid |
+| G3′ ✅yabai 端到端实测 | **27+（唯一可用）** | Dock 内 Swift helper（与 WindowManager.app 同源同形）：`helper(cid, flags, type, displayUUID, pids) → CGSSpaceCreate` | Dock 自己的连接 id（懒加载 getter）+ 自建 options 字典；**不经过 admin XPC，无断言门**。G3 的同代 API 因 `layoutControlHolder` 断言对 Dock 不可得而失败 |
 
 对新系统一律**先判断当前属于哪一代**，再决定改偏移还是换 API；不要默认"还是老机制"。
 
@@ -37,3 +38,18 @@ Dock 模型里的壁纸归属由 DPPM 维护（`addSpace:forDisplayUUID:` / `rem
 ## 7. 代际切换期的双保险
 
 新入口不可用时保留可回退路径（26 的 `dock_spaces` 有 pattern + DOUBLE-ANCHOR 两路；27 的创建走框架而 `removeSpace`/`moveSpace` 仍走 Dock 内函数），但**每个路径都要独立可判失败**（显式 0 + 日志），不得静默降级到语义不同的实现。
+
+## 8. macOS 27：变更是"断言制"，不是随意调用
+
+WindowManager 的 AdminXPC 连接是**断言模型**（`AdminXPCConnectionError.Kind`：`assertionNotHeld` / `assertionAlreadyHeld` / `missingEntitlement` / `invalid` …）。Dock 自身的变更协议是：
+
+```
+synchronouslyRequestLayoutControl()  → 若需变更则先拿到 control 对象（= 持有断言）
+  → 执行变更（窗口激活 / 空间操作）
+  → synchronouslyCommitPendingUpdates()
+  → 释放 control（deinit 归还断言）
+```
+
+**实测**：不做第 1 步直接调 `synchronouslyRequestCreateManagedSpace` → 抛错（error != 0，`x0` 为未定义的垃圾值，**不可当 spid 使用**）`[推论]`：错误类型推断为 `assertionNotHeld`，待实测确认。
+
+**调用注意**：control 对象是 **+1 所有权**（Dock 的用法：`str xN, [ivar]` 无 retain、随后 `swift_release` 旧值），用完必须 `swift_release`；**泄漏它等于永久占住断言**，会让后续变更报 `assertionAlreadyHeld`。

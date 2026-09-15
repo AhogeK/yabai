@@ -2,11 +2,57 @@
 
 ## Current Work Focus
 
-**macOS 27.0 (26A428) 空间创建 / 窗口聚焦修复 — 已验证 · 已发布 7.1.28 (2026-09-15)**
+**7.1.30 空间创建（断言制 + 错误可读化）— 代码完成，待用户安装验证 (2026-09-15)**
 
----
+### 🔥 第二轮：PAC 调用未认证（7.1.28 崩溃）→ 已修（7.1.29）
 
-## 📋 本次变更 (macOS 27)
+- **现象**：`yabai -m space --create` 无报错但空间数不变；Dock 3 分钟重启 3 次（17:58:31 / 17:58:41 / 18:01:33）
+- **现场**：`termination.namespace = PAC_EXCEPTION`；frame1 = payload `handle_connection+5112` → `0x3e90: blr x25`
+- **根因**：arm64e 下 `dlsym()` 返回**已签名**指针，裸 `blr` 必崩（实验：`blr`→SIGSEGV / `blraaz`→✅ / clang 对间接调用也生成 `blraaz x8`）
+- **修复**：3 个宏改 `mov x16, fn; blraaz x16`（7.1.29 / OSAX 2.1.33），ABI 独立实测通过
+
+### ✅ macOS 27 空间创建已修好（7.1.29，2026-09-15 yabai 端到端实测通过）
+
+**最终机制（G3′）**：调用 Dock 自己的 Swift 创建 helper（pattern 0x2bb62c）——
+`helper(cid, flags=0, type=0, SwiftString(displayUUID), __swiftEmptyArrayStorage) → 新空间 id`
+
+**独立验证（脱离 yabai，最小注入负载 `/tmp/spacetest/minpay.dylib`）**：
+
+```
+[minpay] A displayUUID -> 0xcd   spaces 9 -> 10    ← 成功
+[minpay] DONE spaces 9 -> 10                      ← yabai query 确认 10 个空间，Dock 未崩
+```
+
+**两个被推翻的假设**（别再走回头路）：
+
+1. **不是 cid 问题**：`[dockConnection]` 实测 == `SLSMainConnectionID()`（1919... 相同）
+2. **不是 uuid 语义问题**：显示器 UUID 即可（Dock 自身 0x1744cc 用随机 UUID 属另一条路径）
+
+**真正的三个坑（都有崩溃样本）**：
+
+| 坑 | 症状 | 正解 |
+|---|---|---|
+| 签名状态与分支指令不配对 | `PAC_EXCEPTION`（两个方向都出现过） | 未签名裸地址→`blr`；**已签名指针（remove/move/setFrontWindow/addSpace）→ C 调用**；dlsym→`blraaz`。曾把 removeSpace 统一改成 `blr`，27 实测崩在 destroy |
+| `dlsym("__swiftEmptyArrayStorage")` = NULL | 崩在 helper 内 `[NULL+0x10]` | 从 literal pool 解码（site pattern 0x1744bc → slot **0x3c3998**）；**取不到就不调用** |
+| image 相对 offset 加错基址 | 崩在 `slide+0x2c0000` | 加在 **header 指向的运行时地址**上 |
+
+**为什么必须在 Dock 内**（实测）：普通进程 `CGSSpaceCreate` 四种参数全 NULL；非 Dock 进程调框架 API 报 *"Couldn't communicate with a helper application."*
+
+**yabai 端到端证据（2026-09-15 19:50，SA 重载后）**：
+
+```
+[yabai-sa][SPACE] dock connection-id getter found (0x10064AAA8)
+[yabai-sa][SPACE] dock space-create helper found (0x10064362C)
+[yabai-sa][SPACE] empty pid array singleton = 0x1f9ea7db8 (call site 0x1004FC4BC, slot 0x10074B998)
+[yabai-sa][SPACE] dock space-create helper returned space id 213
+spaces 10 -> 11
+```
+
+**`space --destroy` 未动态验证**：daemon 侧被 `space_manager_is_space_last_user_space` 拦下（"acting space is the last user-space..."），请求未到 payload；该路径本次只改了分支指令（`blr`），参数/ABI 沿用 26 代已验证版本。
+
+**清理教训（本轮踩到）**：大批删代码后只验证"编译 + 无告警 + pattern 命中"不够——必须核对**数据流**（关键全局量的赋值点是否还在）。本轮就是删 WM 块时把同段的 G3′ 解析代码一起删了，靠加载日志缺 3 行才发现。
+
+## 📋 上一轮变更 (macOS 27 初版支持, 7.1.28)
 
 **版本**: 7.1.27 → **7.1.28**，OSAX_VERSION 2.1.31 → **2.1.32**
 
@@ -36,7 +82,7 @@
   - set_front_window 0x10000 + **新 pattern**（首 4 字节改通配）→ 唯一命中 0x192bc
   - add_space / space_create_entry → 0（27 无 Dock 内实现）
 
-**验证**: 静态 ✅（pattern 命中/唯一性/全局解码 + 双架构编译）；动态 ✅ **用户实测通过**（`space --create` / `space --focus` / `window --focus` 恢复正常）
+**验证**: 静态 ✅（pattern 命中/唯一性/全局解码 + 双架构编译）；动态 ❌ **初版 7.1.28 实际不可用**——`space --create` 让 Dock 崩溃（PAC 调用问题，见上文 🔥），其余能力（dock_spaces/DPPM/removeSpace/moveSpace/setFrontWindow 解析）均正常
 
 **文档**: `docs/reverse-engineering-macos27-space-create.md`（含 dyld cache 提取与 pattern 校验脚本）
 
@@ -66,7 +112,6 @@
 | `space-management` | 空间创建三代实现表、display UUID 为主键、创建成功的不变量、SLS 与 Dock 模型双写、DPPM 通知 |
 
 **二轮补强（参照《架构师 Agent / 知识库体系》方法论，2026-09-15）**：
-
 - **R1 渐进式加载**：会话开始只读 `AGENTS.md` + 时间线层；领域文件按任务类型路由加载（新增路由表），并写明**回源原则**（binary 行为以实测为准 / 契约以源码为准 / 历史原因以 docs 为准）
 - **R19 条目元数据（强制）**：每个领域文件头部标注 `系统基线 / 最后验证 / 状态（已验证·含推论·方法论） / 来源`；正文推论就地标 `[推论]`，不得把推断伪装成事实
 - **R19 维护触发表**：macOS 大版本升级 → 全域复核；`arm64_payload.m` / `payload.m` / `common.h` / `sa.[hm]` / `space_manager.c` 改动 → 各自对应需复核的领域文件

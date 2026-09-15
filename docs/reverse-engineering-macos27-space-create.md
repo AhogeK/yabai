@@ -215,6 +215,118 @@ log show --last 1m --predicate 'process == "Dock"' | grep "\[yabai-sa\]\[WM\]"
 
 ---
 
+## 5. G3′（2026-09-15 更新）：Dock 内部创建 helper —— 静态定位全过程
+
+### 5.1 为什么放弃 G3（框架 admin XPC）
+
+- `WindowManager.framework` 的客户端调用落到服务端 `AdminXPCListenerDelegate.adminXPCListener(_:connection:requestsCreateManagedSpaceWithDisplayUUID:completion:)`；
+- 服务端有 `WorkspaceLayoutController` / `LayoutControl` / `layoutControlHolder`，突变请求需持有 layout control 断言；
+- 实测：Dock 内取 control → create → commit 仍失败，直连 `CGSSpaceCreate` 亦为 NULL —— 说明**连接身份**才是关键，而非参数。
+
+### 5.2 关键观察：Dock 自己就有创建函数
+
+对 Dock 反汇编做 `CGSSpaceCreate` 调用点清点，得到 2 处，均在同一族 Swift helper 内：
+
+```asm
+; helper 0x1002bb62c（参数：x0=cid, w1=flags, x2=type, x3/x4=Swift String, x5=[pid]）
+...
+mov  w1, #0x7575 ; movk w1, #0x6469, lsl #16   ; "uuid"
+mov  x0, x25 ; bl bridgeToObjectiveC(NSString)
+...
+ldr  x24, [x22, #0x10]                          ; pids.count
+cbz  x24, <跳过 pid 分支>
+...
+bl   bridgeToObjectiveC(NSDictionary)           ; options = @{type, uuid, pid}
+bl   0x100101104                                ; x0 := x21（= helper 的 cid 参数）
+mov  x1, x19                                    ; flags
+mov  x2, x20                                    ; options
+bl   _CGSSpaceCreate                            ; x0 = 新空间 id
+```
+
+该 helper 在 Dock 内有 **21 处调用点**，实参分布：
+
+| 调用点 | flags | type | 说明 |
+|---|---|---|---|
+| 0x1000db410 / 0x1001423e4 / … (19 处) | 1 | 3 | 拖拽/内部临时空间等 |
+| **0x1001744cc** | **0** | **0** | **用户空间**（`SLSSpaceGetType` 0/4 即 yabai 认定的 user space，见 `src/event_loop.c`） |
+
+### 5.3 与 "+"按钮的关系（决定性证据）
+
+`WindowManager.app`（服务端，pid 625）内存在同源函数 `0x100426ab0`：**参数布局、`@{type,uuid,pid}` 构造、`CGSSpaceCreate` 调用形态与 Dock 的 `0x2bb62c` 逐字节同构**，唯一差异是 cid：
+- 服务端：`bl 0x10008b914`（服务端自己的连接）
+- Dock：`bl 0x100101104` → 实际取 **Dock 懒加载缓存的 cid**（getter `0x2c2aa8`：`swift_once` → `swift_beginAccess` → `ldr w0, [x19]`，全局 `0x41e174`）
+
+即：**用户点 "+" 走的就是这个函数**；yabai 在自己的进程（Dock）里用 Dock 的 cid 调用同一个函数，因而不再需要 admin XPC 断言。7.1.32 直连失败的原因也在此——它用的是 `SLSMainConnectionID()`，不是 Dock 缓存的 cid。
+
+### 5.4 pattern（macOS 27.0，均唯一命中）
+
+```
+dock_space_create helper : base 0x2b0000 → 命中 0x2bb62c
+  7F 23 03 D5 E6 03 1E AA ?? ?? ?? ?? FE 03 06 AA FD 7B 06 A9 FD 83 01 91 F6 03 05 AA F8 03 04 AA F9 03 03 AA F4 03 02 AA F3 03 01 AA F5 03 00 AA
+dock_cid_getter          : base 0x2c0000 → 命中 0x2c2aa8
+  7F 23 03 D5 FF 03 01 D1 F4 4F 02 A9 FD 7B 03 A9 FD C3 00 91 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? F3 0A 00 90 73 D2 05 91
+```
+
+### 5.5 实现要点（7.1.33 / OSAX 2.1.37）
+
+- 调用：`asm__call_dock_space_create(cid, 0, 0, uuid_w0, uuid_w1, __swiftEmptyArrayStorage, fn, spid)`
+  - `uuid` 用既有的 `String(NSString)` 桥接（`$sSS10FoundationE36…`），与 Dock 自身调用点一致
+  - `pids` 传 `dlsym("__swiftEmptyArrayStorage")`（空数组单例必须传真对象：helper 命中空数组分支后会对其做 `swift_bridgeObjectRelease`）
+  - 主线程调用（Dock 的每个调用点都在主线程）
+- pattern 得到的是**未签名**地址 → 用普通 `blr`（只有 `dlsym()` 指针才需要 `blraaz`）
+- 返回非 0 视为成功；G3 的 admin XPC 保留为回退路径
+
+## 6. 决定性实验（2026-09-15，脱离 yabai 独立验证）
+
+为了把"机制是否成立"与"yabai 是否接对"分开，用**独立注入器 + 最小负载**验证（不含 daemon / socket / 协议）：
+
+```
+/tmp/spacetest/minpay.dylib   ~100 行：pattern 定位 cid getter + create helper -> blr 调用 -> 打印空间数
+/tmp/spacetest/loader_test    仓库 loader 的副本（注入逻辑未改，仅改 payload 路径）
+```
+
+### 6.1 先被证伪的两条路（都不在 Dock 内）
+
+| 实验 | 结果 |
+|---|---|
+| 普通进程 `CGSSpaceCreate`：本进程 cid / **Dock 的 cid**（`CGSGetConnectionIDForPSN`）/ pid=自己·Dock·WindowManager / 有无 uuid | **全部 NULL**；flags=1 直接崩 |
+| 普通进程 dlopen `WindowManager.framework` 调 `synchronouslyRequestCreateManagedSpace` | Swift 错误 **"Couldn't communicate with a helper application."** |
+
+→ 创建**必须发生在 Dock 进程内**（这也解释了 7.1.30/7.1.31 的 admin XPC 与 7.1.32 的直连为何都失败）。
+
+### 6.2 进程内最小负载的实测输出
+
+```
+[minpay] cid_getter=0x1049faaa8 create_helper=0x1049f362c
+[minpay] dock cid = 1926979 (SLSMainConnectionID=1926979)   ← 假设被推翻：cid 与主连接相同
+[minpay] site=0x1048ac4bc emptyArraySingleton=0x1f9ea7db8   ← 关键：literal pool 解码出真单例
+[minpay] A displayUUID -> 0xcd   spaces 9 -> 10             ← 成功，返回新空间 id
+[minpay] DONE spaces 9 -> 10
+```
+
+`yabai -m query --spaces` → 10（新空间 index 10）；Dock 未崩溃。
+
+### 6.3 失败样本与教训
+
+| 现象 | 根因 | 教训 |
+|---|---|---|
+| Dock 崩于 `Dock+0x2c2aa8`，`PAC_EXCEPTION` | 用 C 函数指针调用 pattern 裸地址；clang 对 C 间接调用生成 `braaz` | **未签名的裸地址用 `blr`**；签名指针/dlsym 指针用 `braaz`/`blraaz` |
+| `space --destroy` 崩（`PAC_EXCEPTION`，地址带签名高位） | 把**已签名**的 `remove_space_fp` 统一改成了裸 `blr` | 签名与分支方式必须配对；该"统一"改动已回退 |
+| Dock 崩于 helper 内部读 `[NULL+0x10]` | `dlsym(RTLD_DEFAULT, "__swiftEmptyArrayStorage")` 返回 **NULL**（Swift 运行时私有符号，不可 dlsym） | 与 Dock 一样**从 literal pool 解码**；且**未解析出时绝不调用** |
+| 负载崩于 `slide+0x2c0000` | 把 image 基址写成 `header - 0x100000000` | image 相对 offset 要加在 **header 指向的运行时地址**上 |
+
+### 6.4 可用配方（macOS 27.0）
+
+```
+helper(cid, flags=0, type=0, SwiftString(displayUUID), __swiftEmptyArrayStorage)  → 新空间 id
+  cid   = Dock 缓存的连接 id（getter 0x2c2aa8；实测 == SLSMainConnectionID）
+  uuid  = 显示器 UUID（临时生成随机 UUID 的对照分支未用上）
+  pids  = literal slot（图像相对 0x3c3998）
+  调用：主线程 + blr（裸地址）
+```
+
+按此配方 7.1.33/7.1.34 在 `payload.m` 的 macOS 27 分支落地。
+
 ## 附录 A：dyld shared cache 镜像提取（可复用）
 
 ```python
