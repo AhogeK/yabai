@@ -1,3 +1,10 @@
+## [7.1.28] - 2026-09-15
+### Fixed
+- Restore space creation, space focus and window focus on macOS 27 (build 26A428): the scripting-addition rejected majorVersion 27 in its version gate, which disabled every scripting-addition feature
+- Refresh Dock offsets/patterns for Dock 2571.0.6.402: dppm 0x70000 -> 0x40000, removeSpace/moveSpace 0x1e0000/0x1c0000 -> 0x180000, animation 0x250000 -> 0x220000, setFrontWindow pattern first byte wildcarded (unique match 0x192bc)
+- Space creation on macOS 27 goes through WindowManager.framework: the Dock no longer hosts a Swift space-create entry, so synchronouslyRequestCreateManagedSpace(displayUUID:) is resolved by mangled name and invoked with the Swift calling convention
+- Scripting-addition version bumped to 2.1.32
+
 ## [7.1.27] - 2026-08-05
 ### Fixed
 - Fix space creation on macOS 26.6 (build 25G72): space_create_entry offset 0x1f07d8 -> 0x1f07d4, with pacibsp verification fallback for minor prologue shifts
