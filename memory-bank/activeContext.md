@@ -2,7 +2,7 @@
 
 ## Current Work Focus
 
-**macOS 27.0 (26A428) 空间创建 / 窗口聚焦修复 — 代码完成，待现场验证 (2026-09-15)**
+**macOS 27.0 (26A428) 空间创建 / 窗口聚焦修复 — 已验证 · 已发布 7.1.28 (2026-09-15)**
 
 ---
 
@@ -36,18 +36,25 @@
   - set_front_window 0x10000 + **新 pattern**（首 4 字节改通配）→ 唯一命中 0x192bc
   - add_space / space_create_entry → 0（27 无 Dock 内实现）
 
-**验证**: 静态完成（pattern 命中/唯一性/全局解码 + 双架构编译通过）；动态待用户安装后确认
+**验证**: 静态 ✅（pattern 命中/唯一性/全局解码 + 双架构编译）；动态 ✅ **用户实测通过**（`space --create` / `space --focus` / `window --focus` 恢复正常）
 
 **文档**: `docs/reverse-engineering-macos27-space-create.md`（含 dyld cache 提取与 pattern 校验脚本）
 
+**发布** (2026-09-15):
+- ai-base `877e4b1` fix → `58edb26` bump 7.1.28 → `17318fb` AI 记忆
+- dev `fbca387` → `0994274`（cherry-pick，无 AI 文件）；master `f2edcba` → `15ae877`（从 dev 逐级 pick）
+- 三支已 push 至 origin，校验一致（src/osax 相同、dev/master 工作树相同、无 AI 文件）
+
 ---
 
-## ⚠️ 待现场验证（用户执行）
+## 🧭 规则优化 (2026-09-15)
 
-1. `yabai --load-sa`（SA 版本不匹配会自动重装并重启 Dock）
-2. `log show --last 5m --predicate 'process == "Dock"' | grep yabai-sa`
-   期望含 `[yabai-sa][WM] WindowManager entry points resolved (...)`
-3. `yabai -m space --create` → 期望 `[yabai-sa][WM] ... returned (spid=<非0>, error=0x0)`
+对照 `../ctt-server/AGENTS.md` 重写本文件（R1-R18），补强四块：
+
+- **R5 / R5.5 授权机械判定**：关键词表（提交≠推送≠pick）+ 执行前自检清单 + 「修好它 ≠ 提交」作用域闭合
+- **R14 分支管理与提交拆分**：ai-base → dev → master 只能逐级 cherry-pick（禁 merge/rebase/反向 pick）+ 功能/版本/AI 记忆三段提交顺序 + 校验清单
+- **R15 版本号管理**：五个版本号位置表（yabai.c / install.sh / common.h / CHANGELOG / yabai.1）+ 全局检查
+- **R12 记忆冷归档**：修剪 = 归档而非删除（`memory-bank/archive/`）
 
 ## 已知设计限制 (不处理)
 
