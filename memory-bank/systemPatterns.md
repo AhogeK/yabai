@@ -19,62 +19,42 @@ SkyLight Observer → Callback → State Update → Client Notification
          [Win1]  [Win2] [Win3]  [Win4]
 ```
 
-- Insert: split parent, rebalance
-- Remove: merge siblings, rebalance
-- Types: BSP (tiling), Stack (layered), Float (unmanaged)
+- Insert: split parent, rebalance；Remove: merge siblings；Types: BSP / Stack / Float
 
 ### IPC Protocol (Unix Domain Socket)
 
-- Path: `/tmp/yabai_<user>.socket`
-- Format: `<command> [args...]`
-- Response: JSON or plain text
+- Path: `/tmp/yabai_<user>.socket`（daemon）；`/tmp/yabai-sa_<user>.socket`（scripting-addition）
+- 格式: `<opcode> [args...]`；响应 JSON/纯文本
 
 ## Memory Management
 
-- Arena allocators for window tree nodes
-- Explicit ownership via comments
-- No RAII - manual `alloc`/`free` tracking required
+- Arena allocators for window tree nodes；无 RAII，需显式记录 alloc/free 契约
 
 ## Scripting Addition Injection
 
-1. Build `payload.m` → binary blob
-2. Build `loader.m` → binary blob
-3. Embed via `xxd -i` → `*_bin.c` files
-4. Runtime: inject into Dock.app via Mach ports
-
-## macOS 26 Space Creation
-
-### Call Chain (Confirmed via LLDB)
-
 ```
-"+" 按钮 → 0x1f07d8 (Swift method, x0=display_id int32, x20=Spaces self)
-          → 内部: ManagedSpace alloc + 数组追加 + CGS 注册
-          → DPPM addSpace:forDisplayUUID: (壁纸)
+payload.m → payload dylib (arm64e) ─┐
+loader.m  → loader binary          ─┴→ xxd -i 内嵌到 yabai 二进制
+→ 安装到 /Library/ScriptingAdditions/yabai.osax（SIP 部分关闭）
+→ Dock 启动时加载 loader，loader dlopen payload 到 Dock 进程内
 ```
 
-### Swift Calling Convention (macOS 26)
+## Space Creation 三代实现（版本演进）
 
-| Register | Role |
-|----------|------|
-| `x0` | First argument (display_id as int32_t → w0) |
-| `x20` | Swift `self` (Spaces singleton) — callee-saved |
+| 世代 | 实现 | 调用方式 |
+|------|------|---------|
+| ≤ 25 | Dock `addSpace` 函数 | `x0=new_space, x20=display_space`（asm 宏） |
+| 26 | Dock Swift `space_create_entry` | `x0=display_id, x20=Spaces self`（原子 asm + `blr`） |
+| 27 | **WindowManager.framework** `synchronouslyRequestCreateManagedSpace(displayUUID:)` | dlsym + Swift ABI（x20=self，x0/x1=String，错误 x21） |
 
-### Key Classes (DockCore Swift Framework)
+## macOS 26/27 动态定位模式
 
-- `Spaces`: 空间数据模型 (`<Spaces: 0x...>`)
-- `SpacesBarWindowController`: 单显示器视图控制器 (含 DisplayInfo, currentSpace)
-- `DockCore.ExposeSpacesBarController`: Mission Control 空间栏总指挥
-- `DockCore.SpacesBarAddLayerController`: "+" 按钮 UI 控制器
-- `DockCore.WallpaperAgentDesktopPictureManager`: 壁纸管理器 (15 实例方法, 0 类方法)
+- **Spaces 单例**: pattern（`doBindingCommand:display` 反汇编特征）→ `decode_adrp_add`；26 另有 DOUBLE-ANCHOR 兜底（搜索 `bl space_create_entry` 后回溯 adrp/add）
+- **DPPM 单例**: 26 为 setter 控制流指纹（cbnz+str）；27 指纹失效 → 退回 `DPRemoteConnection::_handleEvent:` pattern（`adrp+add+ldr` 融合）
+- **全局语义画像**: `dyld_info -fixups` 建 selector→字符串映射 → 扫描 `__objc_stubs` 得 stub→selector → 对 `__text` 做寄存器级抽象解释，统计"全局 × 方法名"定位单例归属
 
-### Dynamic Singleton Discovery
-
-- **Spaces**: DOUBLE-ANCHOR (bl→space_create_entry_fp + backtrack adrp/add), offset `0x488028`
-- **DPPM**: Control-flow fingerprint (cbnz+str guard in setter), offset `0x4880d0`
-
-### Manual UI Path (28 layers)
+### Manual UI Path (28 layers, macOS 26)
 
 ```
 RunLoop Source1 (HIServices) → mshPerform → ... → #05 (0x22abb8) array append
-#05: Swift.Array._appendElementAssumeUniqueAndCapacity ← key array update point
 ```

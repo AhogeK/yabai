@@ -7,76 +7,72 @@
 | C Standard      | C11 (`-std=c11`)                                 |
 | Compiler        | Apple Clang (xcrun clang)                        |
 | Deployment      | macOS 11.0+ (`-mmacosx-version-min=11.0`)        |
-| Architectures   | Universal: x86_64 + arm64                        |
+| Architectures   | Universal: x86_64 + arm64 (osax payload: arm64e) |
 | Debug Build     | `-g -O0 -fvisibility=hidden`                     |
 | Release Build   | `-O3 -DNDEBUG -fvisibility=hidden`               |
+
+> 本机 `xcrun clang` 若报 Xcode license 未接受，可临时 `DEVELOPER_DIR=/Library/Developer/CommandLineTools make`。
 
 ## Private Frameworks
 
 | Framework    | Purpose                              | Risk Level |
 |--------------|--------------------------------------|------------|
-| SkyLight     | Core window management, spaces      | HIGH       |
+| SkyLight     | Core window management, spaces       | HIGH       |
+| **WindowManager** | **macOS 27 起空间/窗口管理实现（Dock 22+ 链接，仅存于 dyld shared cache）** | HIGH |
 | Carbon       | Event taps, accessibility            | MEDIUM     |
 | Cocoa        | Obj-C bridging, app lifecycle        | LOW        |
 
 ## SIP & Code Signing
 
-- **SIP Disabled**: scripting-addition injection into Dock.app
+- **SIP Disabled**: scripting-addition injection into Dock.app（`/Library/ScriptingAdditions/yabai.osax`）
 - **SIP Enabled**: reduced window control capabilities
 - **Code Signing**: requires `yabai-cert` identity or ad-hoc
 
-## macOS 26 Tahoe API Changes
+## macOS 27 API Changes（Dock 2571.0.6.402 / WindowManager 462.0.8）
 
-### Removed Symbols
+### 移除/失效
 
-| Symbol | Status |
-|--------|--------|
-| `CGSAddManagedSpace` | 0x0 (失效) |
-| `CGSManagedDisplayAddSpace` | 0x0 (失效) |
-| `SLSSpaceCreate` | 0x0 (失效) |
+| 符号 | 状态 |
+|--------|------|
+| Dock Swift `space_create_entry` (26.6: `0x1f07d4`) | 27 已移除 |
+| `CGSAddManagedSpace` / `CGSManagedDisplayAddSpace` / `SLSSpaceCreate` | 0x0（26 起失效） |
+| DPPM setter 控制流指纹（`find_dppm_singleton_instructions`） | 27 无匹配（改用 pattern 路径） |
 
-### Key Function Offsets (macOS 26.6 Tahoe, build 25G72, Dock 2427.6)
+### macOS 27 关键偏移（Dock arm64e）
 
 | 偏移 | 功能 | 状态 |
 |------|------|------|
-| `0x1f07d4` | space_create_entry (Swift method) — moved from 0x1f07d8 (26.4) | ✅ 已修复 |
-| `0x22abb0` / `0x27eb0c` | space_create_entry 调用点 (bl → 0x1f07d4) | ✅ 已确认 |
-| `0x1eb338` | 数组遍历 | ✅ 已确认 |
-| `0x285564` | CGSMoveManagedSpaceToDisplayIndex | ✅ 已确认 |
-| `0x488028` | Spaces singleton (数据段稳定) | ✅ 动态定位 |
-| `0x4880d0` | DPPM singleton (数据段稳定) | ✅ 动态定位 |
+| `0x192bc` | setFrontWindow 入口（cbz w1 早退 + pacibsp 序言） | ✅ 唯一命中 |
+| `0x18b9a0` | removeSpace | ✅ pattern 命中 |
+| `0x18c554` | moveSpace | ✅ pattern 命中 |
+| `0x227508` | animation-time 指令序列 | ✅ pattern 命中 |
+| `0x100409bb0` | Spaces 单例全局（`__common`） | ✅ pattern 解码 |
+| `0x100409c50` | DPPM 单例全局（`__common`） | ✅ pattern 解码 |
 
-### Call Chain
-
-```
-0x1f07d8 → internal: ManagedSpace alloc + array append + CGS → addSpace:forDisplayUUID:
-```
-
-### Swift Calling Convention
+### macOS 27 空间创建（WindowManager.framework）
 
 ```c
-// x0 = display_id (int32_t, use w0)
-// x20 = Spaces singleton (Swift self, callee-saved)
-#define asm__call_space_create_tahoe(display_id, spaces_self, func) \
-    asm volatile( \
-        "mov w0, %w[did]\n" \
-        "mov x20, %[self]\n" \
-        "blr %[fp]\n" \
-        : : [did] "r" ((uint32_t)(display_id)), \
-            [self] "r" ((uintptr_t)(spaces_self)), \
-            [fp] "r" ((uintptr_t)(func)) \
-        : "x0","x1","x2","x3","x4","x5","x6","x7", \
-          "x8","x9","x10","x11","x12","x13","x14","x15", \
-          "x16","x17","x19","x20","x30","memory")
+// dlsym（mangled Swift 符号，无 Dock 偏移依赖）
+"$s13WindowManagerAACMa"                                    // type metadata accessor
+"$s13WindowManagerAAC6sharedABvgZ"                          // static shared getter
+"$s13WindowManagerAAC38synchronouslyRequestCreateManagedSpace11displayUUIDs6UInt64VSSSg_tKF"
+"$sSS10FoundationE36_unconditionallyBridgeFromObjectiveCySSSo8NSStringCSgFZ"  // String(NSString)
+"swift_errorRelease"
+
+// Swift ABI: 静态 getter 需 x20 = metatype；实例方法 x20 = self，
+// String 占 x0/x1，返回值 x0，throws 错误在 x21（调用前必须清零）
 ```
 
-### Compiler Optimizations (Xcode 16.3+)
+### Swift 调用约定速查（macOS 26/27）
 
-- **Deferred stack allocation**: `sub sp` removed from prologue
-- **add+ldr fusion**: `adrp + add + ldr` → `adrp + ldr Xd, [Xn, #imm*8]`
-- DPPM offset `0xd0` fits in LDR immediate (12-bit × 8 = max 32760)
+| 寄存器 | 角色 |
+|--------|------|
+| `x0/x1` | 参数 1/2（String 等 2-word 值） |
+| `x20` | self（实例方法）/ metatype（静态方法） |
+| `x21` | swift_error*（throwing 方法返回） |
+| `x0` | 返回值 |
 
 ### Sandbox Constraints
 
-- IOKit (`CGDisplayIOServicePort`) returns `MACH_PORT_NULL` in Dock sandbox
-- Use `CGDisplayCreateUUIDFromDisplayID` (CoreGraphics, sandbox-safe)
+- IOKit (`CGDisplayIOServicePort`) 在 Dock 沙箱返回 `MACH_PORT_NULL`
+- 用 `CGDisplayCreateUUIDFromDisplayID`（CoreGraphics，沙箱安全）
