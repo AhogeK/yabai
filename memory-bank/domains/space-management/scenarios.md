@@ -34,3 +34,34 @@
 ## S6. `space --move` 跨显示器后壁纸丢失
 
 **动作**：确认 `moveSpace:toDisplay:displayUUID:` 被调用（DPPM 需重新绑定），并核对 `CGSMoveManagedSpaceToDisplayIndex` 的 display index 语义 `[推论]`（index 不是 display UUID）。
+
+## S8. 按编号操作桌面时打到了别的显示器（macOS 27.0.1+）
+
+**判断**：多显示器 + 按数字选择器（`space --focus N` / `window --space N`），发现生效的是另一台显示器上的桌面。
+
+**动作**：
+1. 记住 yabai 的 N 是**全局序**（display 1 全部 → display 2 全部 → …），而 Mission Control 的编号是**每显示器独立**；
+2. 需要"当前显示器的第 N 个"时用：`yabai -m query --spaces --display | jq -r '.[N-1].index'` 取到 yabai 的 index 再用；
+3. 校验方法：`yabai -m query --spaces | jq '[.[] | {index, display}]'`（对照 `yabai -m query --displays`）。
+
+## S9. 开机后主屏没有桌面 / Mission Control 连 Spaces Bar 与 `+` 都没有（macOS 27.0.1）
+
+**判断**：这是 **macOS 侧**问题，不是 yabai。取证看登录阶段的 WindowManager 日志：
+
+```bash
+log show --last boot --predicate 'process == "WindowManager"' --style compact \
+  | grep -E "managed space order|No visible space"
+```
+
+典型证据（2026-09-30 14:30 实测）：
+
+```
+WSSpaceManager: display 37D8832A-…(主屏) managed space order: [6, 6, 6, 6, 6, 6, 6, 6]   ← 损坏
+E [com.apple.windowmanagement:login] No visible space found for display: 37D8832A-…; skipping（反复）
+```
+
+**动作**：
+1. 立刻恢复：`yabai -m space --create`（SA 直调 CGS 建空间，会把系统存储里的该显示器条目重写成正常值）。
+2. 复查存储是否脏：`plutil -p ~/Library/Preferences/com.apple.spaces.plist` —— 若出现**系统中不存在的显示器 UUID**（幽灵记录）或某显示器 `Spaces` 为空/重复，即为脏数据。
+3. 预防：备份后清掉幽灵记录或整体复位该域（`defaults delete com.apple.spaces` + `killall cfprefsd`），**重启**让系统重建默认布局；重启前不要指望 yabai 常驻修复。
+4. 判定责任：yabai 的 yabairc 只要没有开机动空间的 signal/脚本，就不可能是原因；SA 的 create 只是修复手段。

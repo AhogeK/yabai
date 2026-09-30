@@ -32,7 +32,7 @@
 
 | 项目 | 当前值 |
 |---|---|
-| 目标系统 | macOS 27.0 (26A428)；Dock 2571.0.6.402；WindowManager.framework 462.0.8 |
+| 目标系统 | macOS 27.0.1 (26A434)；Dock 2571.0.6.402；WindowManager.framework 462.0.8 |
 | 空间创建 | **G3**：`WindowManager.framework`（27 起 Dock 无本地实现） |
 | 空间销毁/移动 | 仍走 Dock 内 `removeSpace` / `moveSpace`（pattern 命中） |
 | Spaces / DPPM 单例 | 由 pattern 在运行时解码（27.0：`0x100409bb0` / `0x100409c50`） |

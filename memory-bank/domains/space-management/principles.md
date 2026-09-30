@@ -1,6 +1,6 @@
 # principles — 空间管理的不变量
 
-> **系统基线**：macOS 27.0 (26A428) · Dock 2571.0.6.402 · WindowManager 462.0.8
+> **系统基线**：macOS 27.0.1 (26A434) · Dock 2571.0.6.402 · WindowManager 462.0.8
 > **最后验证**：2026-09-15 · **状态**：含推论
 > **来源**：§1 代际表已验证（26/27 实测）；§4 ivar 改名与 §5 前置门为源码推论，未在 27 实测
 
@@ -14,6 +14,14 @@
 | G3′ ✅yabai 端到端实测 | **27+（唯一可用）** | Dock 内 Swift helper（与 WindowManager.app 同源同形）：`helper(cid, flags, type, displayUUID, pids) → CGSSpaceCreate` | Dock 自己的连接 id（懒加载 getter）+ 自建 options 字典；**不经过 admin XPC，无断言门**。G3 的同代 API 因 `layoutControlHolder` 断言对 Dock 不可得而失败 |
 
 对新系统一律**先判断当前属于哪一代**，再决定改偏移还是换 API；不要默认"还是老机制"。
+
+## 1.5 yabai 的 index 是「全局序」，与 macOS 的「按显示器编号」不是一回事
+
+`query --spaces` 的 `index`、以及 `space --focus N` / `window --space N` 里的 N，都是 **跨显示器顺序累加**（`space_manager_mission_control_index` / `mission_control_space` 用一个走到头的 `desktop_cnt`）。macOS 27.0.1 起 Mission Control 的 Desktop 编号是**每显示器独立**的 → 在 display 2 及以后，**yabai 的 N ≠ 你看到的 Desktop N**（实测：yabai index=3 落在 display 2 的第 1 个桌面）。
+
+- 读取 index 再回填（`query --spaces` → `--focus/--destroy <index>`）**自洽**，不受影响；
+- 硬编码 1..9 的绑定会打错显示器 → 改成按当前显示器取第 N 个：`yabai -m query --spaces --display | jq -r '.[N-1].index'` 再喂给命令；
+- **不要**为了对齐 UI 去改 yabai 的 index 语义（上游定义 + 破坏既有脚本）。
 
 ## 2. display UUID 是空间操作的唯一主键
 

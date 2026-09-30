@@ -11,6 +11,19 @@
 - **根因**：arm64e 下 `dlsym()` 返回**已签名**指针，裸 `blr` 必崩（实验：`blr`→SIGSEGV / `blraaz`→✅ / clang 对间接调用也生成 `blraaz x8`）
 - **修复**：3 个宏改 `mov x16, fn; blraaz x16`（7.1.29 / OSAX 2.1.33），ABI 独立实测通过
 
+### 🐞 开机主屏无桌面（27.0.1，2026-09-30）——macOS 侧 bug
+
+- **现象**：开机后主屏没有 space，Mission Control 无 Spaces Bar / `+`；`space --create` 后恢复（重启复现）
+- **证据**：WindowManager 登录日志 `managed space order: [6,6,6,6,6,6,6,6]`（主屏损坏）+ 反复 `No visible space found for display: 37D8832A-…; skipping`；`com.apple.spaces.plist` 含幽灵显示器 `F03C6F6E-…`
+- **责任面**：yabairc 无开机动空间逻辑 → 非 yabai；SA 的 create 只是修复手段；再犯则清幽灵记录/复位 `com.apple.spaces` 后重启（详见 scenarios S9）
+
+### 🔎 系统更新后核查（27.0.1 / 26A434，2026-09-30）
+
+- **SA 与创建路径仍正常**：Dock 版本未变（2571.0.6.402），pattern 命中不变；日志显示当天两次成功创建（space id 50 / 57）
+- **yabai 核心操作正常**：`space --focus 3` 精确落在 display 2 的空间，模型分组与 SLS 原始模型一致
+- **唯一错位**：yabai 的 `index` / 数字选择器是**全局序**，而 macOS 27.0.1 的 Mission Control 按**每显示器独立**编号 → 多显示器下 `focus N` 与"看到的 Desktop N"不一致（详见 space-management/principles.md §1.5 与 scenarios.md S8）
+- 处置：**不改 yabai**（上游语义 + 自洽），在绑定层用 `query --spaces --display` 取"当前显示器的第 N 个"
+
 ### ✅ macOS 27 空间创建已修好（7.1.29，2026-09-15 yabai 端到端实测通过）
 
 **最终机制（G3′）**：调用 Dock 自己的 Swift 创建 helper（pattern 0x2bb62c）——

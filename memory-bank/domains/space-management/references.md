@@ -36,6 +36,27 @@
 | ManagedSpace | `spid`、`displayUUID`、类型（user / fullscreen / proxy） |
 | DPPM | `addSpace:forDisplayUUID:` / `removeSpace:` / `moveSpace:toDisplay:displayUUID:` / `addFullscreenSpace:forDisplayUUID:` |
 
+## 空间布局的持久化位置（27.0.1）
+
+| 路径 | 内容 |
+|---|---|
+| `~/Library/Preferences/com.apple.spaces.plist` | **系统空间布局存储**：`SpacesDisplayConfiguration → Management Data → Monitors[]`，每项含 `Display Identifier`（主屏为 `"Main"`）、`Current Space`、`Spaces[]`（`id64`/`type`/`uuid`） |
+| `~/Library/Application Support/com.apple.windowmanager/state.plist` | 窗口分组状态（与空间无关） |
+| `defaults read com.apple.windowmanager` | 仅 UI 偏好（无空间布局） |
+
+**脏数据特征**：出现当前系统不存在的显示器 UUID（幽灵记录）；某显示器的 `Spaces` 重复同一 `id64` 或为空。
+
+## SLS 空间模型的关键字段（27.0.1 实测）
+
+| 字段 | 说明 |
+|---|---|
+| `SLSCopyManagedDisplaySpaces` | 每个元素 = 一个 display；`Display Identifier`、`Spaces[]`、`Current Space` |
+| space 的 `id64` / `ManagedSpaceID` | yabai 用的 sid（实测两者一致，如 id=50/58） |
+| space 的 `type` | 0 = user（27.0.1 上新建空间仍为 0） |
+| space 的 `uuid` | **27.0.1 起等于其所在显示器的 UUID**（display 1 的两个空间都是 `37D8832A…`） |
+
+yabai 的两个序号函数（`src/space_manager.c`）：`space_manager_mission_control_index(sid)` → 全局序号；`space_manager_mission_control_space(N)` → 反查。**两者都跨显示器累加**。
+
 ## 代际与系统版本对照
 
 | 系统 | 创建 | 销毁 | 移动 | 备注 |
