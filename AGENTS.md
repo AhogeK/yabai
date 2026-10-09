@@ -231,7 +231,7 @@ Flow: 记录问题 → 添加/修改规则 → 记录到 `activeContext.md` → 
 | 分支 | 角色 | 允许内容 | 禁止内容 |
 |---|---|---|---|
 | `ai-base` | AI 工作分支（默认 checkout） | 业务代码 + 版本号 + AI 文件（`memory-bank/`、`docs/reverse-engineering-*`、`skills-lock.json`、`AGENTS.md`） | —— |
-| `dev` | 开发分支 | 业务代码 + 版本号 + 面向用户的项目文档（如 `docs/upstream-sync-report-*`） | AI 文件（memory-bank、逆向笔记、AGENTS.md、skills-lock.json、`.omo/`） |
+| `dev` | 开发分支 | 业务代码 + 版本号（`docs/` 整体只属 ai-base，见 R17） | AI 文件与 `docs/`（memory-bank、逆向笔记、plans、报告、AGENTS.md、skills-lock.json、`.omo/`） |
 | `master` | 发布分支 | 与 `dev` 内容一致 | 同 `dev`；且禁止直接改代码 |
 
 **提交拆分（原子化，顺序固定）**：
@@ -258,7 +258,7 @@ git checkout ai-base
 - [ ] 三支版本号一致（`PATCH` / `VERSION` / `OSAX_VERSION`）
 - [ ] 推送后 `git fetch origin` + 逐支比对 `local == origin/<branch>`
 
-**禁止操作**：merge、rebase、`git reset --hard`、反向 cherry-pick（master→dev）、在 dev/master 直接提交代码、把 AI 文件带进 dev/master。
+**禁止操作**：merge、rebase、`git reset --hard`、反向 cherry-pick（master→dev）、在 dev/master 直接提交代码、把 AI 文件或 `docs/` 内容带进 dev/master。
 
 **事故恢复**：立即停止 → 确认污染范围（`git log --oneline` / `git diff`）→ 回到安全点 → 重新 pick → 需强推时先取得用户同意（`--force-with-lease`）→ 记录到 `activeContext.md`。
 
@@ -289,7 +289,7 @@ git checkout ai-base
 
 - **`.agents/`（skills 工作区）只读红线**：禁止读取/修改/删除其中任何文件，禁止因"发现问题"改动，禁止纳入审查/重构范围；发现问题只提醒用户
 - **AI 运行时数据**（`.omo/`、`.opencode/node_modules/` 等已 gitignore）不进提交
-- **AI 逆向笔记/报告**：放 `docs/`（仅 ai-base 分支，见 R14）；面向用户的项目文档才允许进 dev/master
+- **AI 逆向笔记/报告/计划**：放 `docs/`（**整个 `docs/` 目录只存在于 ai-base**，含 plans 与各类报告）；dev/master 不带任何 `docs/` 内容
 - **临时中间产物**：系统 `/tmp/<topic>/`，禁止落进仓库
 - **未经用户同意不新增 `.md` 文档**（`AGENTS.md` 自更新除外）
 

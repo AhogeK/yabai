@@ -48,6 +48,29 @@
 
 - R5/R5.5 授权机械判定（提交≠推送≠pick + 执行前自检）· R14 三级 cherry-pick + 功能/版本/记忆三段提交 · R15 五处版本号 · R12 冷归档 · R19 领域知识库（3 领域 × 五件套 + 条目元数据 + 维护触发表）
 
+## 📦 7.2.5 已提交并推送（2026-10-10）
+
+- 提交拆分（ai-base）：`a8b3b2c` 功能（纯业务代码）→ `c226d5e` 版本 → `4bd78a9` AI 记忆（**只含 memory-bank**）→ `6115f7b` 实施计划（`docs/plans/`，**AI 内容，留 ai-base**）
+- 逐级 cherry-pick：ai-base → dev → master（只 pick 功能与版本两笔；`docs/` 不进 dev/master）
+- **污染事故与纠正**：`docs/plans` 曾被当成项目文档 pick 到 dev/master → 用户指出 `docs/` 全属 AI 侧 → 用 `git filter-branch --index-filter 'git rm -r --cached docs' --prune-empty` **从 dev/master 的全部历史中移除 `docs/`**（变空的提交被剪掉：本次计划 + 旧的 `docs/upstream-sync-report-2026-04-26.md`），随后 `--force-with-lease` 强推两支
+- 现端点：ai-base `6115f7b`（未变）/ **dev `8d49d34`（1720 提交，历史无 docs）** / **master `4d89206`（1725 提交，历史无 docs）**；`fetch` 后逐支 local == origin ✓
+- 校验：dev↔master 工作树 0 差异；`src/osax` 三支一致；三支版本号一致（7.2.5 / OSAX 2.1.33）；dev/master 无 `memory-bank`/`skills-lock`/`AGENTS.md`/`docs/`
+- **规则修正**：R14 的 dev 行与 R17 已更新 —— `docs/` 目录（含 plans 与报告）**只存在于 ai-base**，dev/master 只有业务代码 + 版本号
+
+### ⏳ 提交前就存在的分叉（待用户决定，勿擅自改）
+
+`git diff aa64db7 06ec0a1 -- src/ doc/` 可复现（3 文件，早于本次提交）：
+
+| 文件 | ai-base | dev/master |
+|---|---|---|
+| `src/display_manager.c` | `CGPostMouseEvent` 两连击 + pragma（与上游当前版本一致） | 仅 `CGWarpMouseCursorPosition(display_center(did))` |
+| `src/event_loop.c` | 有 `#2217 properly reset ffm window id upon window close` 两行 | 无（dev 的 `#2217` 是另一条提交） |
+| `doc/yabai.asciidoc` | 无 | 多一行 "SIP must be partially disabled" |
+
+→ 影响：**master 构建产物在这三处与 ai-base 不同**（7.1.29 起即如此）。
+
+---
+
 ## 已知设计限制 (不处理)
 
 | 问题 | 原因 |
