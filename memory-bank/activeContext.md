@@ -57,6 +57,16 @@
 - 校验：dev↔master 工作树 0 差异；`src/osax` 三支一致；三支版本号一致（7.2.5 / OSAX 2.1.33）；dev/master 无 `memory-bank`/`skills-lock`/`AGENTS.md`/`docs/`
 - **规则修正**：R14 的 dev 行与 R17 已更新 —— `docs/` 目录（含 plans 与报告）**只存在于 ai-base**，dev/master 只有业务代码 + 版本号
 
+### ⏳ 提交前就存在的分叉（已解决，见上一节）
+
+### 🔧 dev/master 缺失的下游提交 → 已补齐并推送（2026-10-10）
+
+- 定性：dev/master 从未收到 `#2780 implement space --focus with SIP enabled` 的 display 部分（`display_manager.c` 的 `CGPostMouseEvent` 回退块 + `doc/yabai.asciidoc` 里那句已被该提交作废的 SIP 说明）与 `#2217 properly reset ffm window id upon window close`（`event_loop.c` 两行）；`space_manager.c` / `doc/yabai.1` / `CHANGELOG.md` 实测早已等价
+- 反向：ai-base 缺 `#2764`（SA 26.4 AS）与 `#2708`（SA 版本号）→ 内容已被后续工作覆盖（三支 `payload.m` 完全相同、`OSAX_VERSION` 同为 2.1.33）→ 无需动作
+- 处置：dev 上 `cherry-pick -n 3f16c7c`（`space_manager.c` 冲突处取 ai-base 版本，其余取 pick 结果）→ 提交 `a761233`；再 `cherry-pick 8642e11` → `83c7916`；master 逐级 pick → `be6fe72` / `70e084b`；**普通推送**（非强推）
+- 校验：`git diff ai-base dev -- src/ doc/ CHANGELOG.md` = 0 行（master 同）；dev↔master 0 行；`src/osax` 三支 0 行；版本号三支一致（7.2.5 / 2.1.33）；除 AI 侧文件外已无分叉
+- 版本号未 bump：内容回到 7.2.5 应有状态、ai-base 未变（三支版本号与内容现已一致）
+
 ### ⏳ 提交前就存在的分叉（待用户决定，勿擅自改）
 
 `git diff aa64db7 06ec0a1 -- src/ doc/` 可复现（3 文件，早于本次提交）：
