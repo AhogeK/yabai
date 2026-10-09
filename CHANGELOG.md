@@ -1,3 +1,27 @@
+## [7.2.5] - 2026-10-10
+### Changed
+- Fullscreen view follow no longer switches the space itself. Racing to switch it collided with whatever else follows the front application: the log showed the user's front-app signal script re-deciding in the middle of our switch and pulling the view back, which is what made the view bounce. It now only brings the restored window forward - the front application then owns a window on the space it should be seen on, so the follow itself happens through the user's own (instant) path - and switches the space on its own only if nothing else did; that check runs after 0.4s instead of 2s
+
+## [7.2.4] - 2026-10-10
+### Fixed
+- Fullscreen view follow could switch before the system's own space change, which then overrode it, and left the front application pointing at a window on another space - a signal script that follows the front application would drag the view back afterwards. The follow now waits for the system's space change (the fallback timer went from 0.8s to 2s so it cannot fire first) and, once the view is switched, focuses the restored window so the front application is the one living on that space. Follow timings are now logged with millisecond timestamps
+
+## [7.2.3] - 2026-10-10
+### Changed
+- Fullscreen view follow no longer waits out a fixed delay. The exit's own switch to the display's first user space arrives as SPACE_CHANGED - that is the signal the system is done restoring - so the follow is made the moment it lands, a few milliseconds instead of half a second. The 0.8 second timer is now only a fallback for when nothing switches the view at all, and a follow is still dropped if a `space` or `window --focus/--space/--display` command arrives first
+
+## [7.2.2] - 2026-10-10
+### Changed
+- Fullscreen view follow now makes a single switch instead of re-asserting. Logs showed every switch back to the display's first user space was a socket command (a person or a signal script switching spaces), so re-asserting only fed a visible back-and-forth with it. The switch is armed when a restored window is sent back to its origin space, then deferred while space changes keep arriving and made only after half a second of quiet - within a 3 second window. It is dropped as soon as a `space` command, or a `window --focus/--space/--display` command, arrives, so anything else driving the view takes precedence. The switch itself runs on the event loop thread through a new `VIEW_FOLLOW` event
+
+## [7.2.1] - 2026-10-10
+### Fixed
+- Fullscreen restore on macOS 27.0.1: the view no longer stays on the display's first user space after a fullscreen exit. macOS re-applies that space while the exit settles - after our own switch - so the restore now records the target space as a pending intent and re-asserts it from the SPACE_CHANGED and window handlers. The intent survives intermediate states (being back on the target space does not disarm it), and ends on expiry (3s) or after 5 re-asserts, so it never fights the system or the user indefinitely
+
+## [7.2.0] - 2026-10-10
+### Added
+- Fullscreen restore: remember which user space (and which side of the split) a window came from when it enters a native fullscreen space, and put it back there once the fullscreen space goes away. macOS 27.0.1 drops such a window back onto the display's first user space instead; this works around it. New API in `window_manager.{h,c}`; wired to SPACE_CHANGED / WINDOW_MOVED / WINDOW_DESTROYED / SPACE_DESTROYED. Scripting-addition is unchanged
+
 ## [7.1.29] - 2026-09-15
 ### Fixed
 - Space creation on macOS 27 (26A428 / Dock 2571.0.6.402): the Dock no longer hosts the Swift space-create entry used on macOS 26, so drive the helper it still ships - the same function the WindowManager server runs for the Mission Control "+" button - from the scripting-addition: `helper(cid, flags, type, displayUUID, pids) -> CGSSpaceCreate`
