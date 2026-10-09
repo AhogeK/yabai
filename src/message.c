@@ -1776,6 +1776,9 @@ static void handle_domain_space(FILE *rsp, struct token domain, char *message)
         return;
     }
 
+    // A space command from the socket means somebody else is driving the view right now.
+    window_manager_abort_view_follow(&g_window_manager);
+
     for (; token_is_valid(command); command = get_token(&message)) {
         if (token_equals(command, COMMAND_SPACE_FOCUS)) {
             struct selector selector = parse_space_selector(rsp, &message, acting_sid, false);
@@ -2060,6 +2063,13 @@ static void handle_domain_window(FILE *rsp, struct token domain, char *message)
     }
 
     for (; token_is_valid(command); command = get_token(&message)) {
+        if (token_equals(command, COMMAND_WINDOW_FOCUS) ||
+            token_equals(command, COMMAND_WINDOW_SPACE) ||
+            token_equals(command, COMMAND_WINDOW_DISPLAY)) {
+            // Window focus or a window moving between spaces: somebody else is driving the view.
+            window_manager_abort_view_follow(&g_window_manager);
+        }
+
         if (!acting_window &&
             !token_equals(command, COMMAND_WINDOW_FOCUS) &&
             !token_equals(command, COMMAND_WINDOW_CLOSE) &&

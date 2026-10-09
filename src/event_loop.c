@@ -608,6 +608,7 @@ static EVENT_HANDLER(WINDOW_DESTROYED)
     }
 
     debug("%s: %s %d\n", __FUNCTION__, window->application ? window->application->name : "<unknown>", window->id);
+    window_manager_forget_fullscreen_entry(&g_window_manager, window->id);
 
     struct view *view = window_manager_find_managed_window(&g_window_manager, window);
     if (view) {
@@ -693,6 +694,9 @@ static EVENT_HANDLER(WINDOW_MOVED)
     }
 
     debug("%s: %s %d\n", __FUNCTION__, window->application->name, window->id);
+    window_manager_remember_geometry(&g_space_manager, &g_window_manager, window_space(window->id));
+    window_manager_retry_fullscreen_entry(&g_window_manager);
+    window_manager_restore_fullscreen_entries(&g_space_manager, &g_window_manager);
     event_signal_push(SIGNAL_WINDOW_MOVED, window);
     bool windowed_fullscreen = CGRectEqualToRect(window->windowed_frame, window->frame);
     window->frame.origin = new_origin;
@@ -743,6 +747,7 @@ static EVENT_HANDLER(WINDOW_RESIZED)
     }
 
     debug("%s: %s %d\n", __FUNCTION__, window->application->name, window->id);
+    window_manager_retry_fullscreen_entry(&g_window_manager);
     event_signal_push(SIGNAL_WINDOW_RESIZED, window);
 
     bool was_fullscreen = window_check_flag(window, WINDOW_FULLSCREEN);
@@ -978,6 +983,7 @@ static EVENT_HANDLER(SLS_SPACE_CREATED)
 static EVENT_HANDLER(SLS_SPACE_DESTROYED)
 {
     uint64_t sid = (uint64_t)(intptr_t) context;
+    window_manager_forget_fullscreen_entries_on_space(&g_window_manager, sid);
     struct view *view = table_find(&g_space_manager.view, &sid);
     if (view) {
         debug("%s: %lld\n", __FUNCTION__, sid);
@@ -994,12 +1000,23 @@ static EVENT_HANDLER(SPACE_CHANGED)
     g_space_manager.last_space_id = g_space_manager.current_space_id;
     g_space_manager.current_space_id = space_manager_active_space();
 
+    if (space_is_fullscreen(g_space_manager.current_space_id)) {
+        window_manager_note_fullscreen_entry(&g_window_manager, g_space_manager.current_space_id,
+                                             g_space_manager.last_space_id);
+    } else {
+        window_manager_remember_geometry(&g_space_manager, &g_window_manager, g_space_manager.current_space_id);
+    }
+    window_manager_restore_fullscreen_entries(&g_space_manager, &g_window_manager);
+    // The exit's own space change means the system is done restoring: follow the window now.
+    window_manager_view_follow_on_space_change(&g_window_manager, g_space_manager.current_space_id);
+
     if (g_window_manager.menubar_opacity != 1.0f) {
         float alpha = space_is_fullscreen(g_space_manager.current_space_id) ? 1.0f : g_window_manager.menubar_opacity;
         SLSSetMenuBarInsetAndAlpha(g_connection, 0, 1, alpha);
     }
 
-    debug("%s: %lld\n", __FUNCTION__, g_space_manager.current_space_id);
+    debug("%s: %lld (t=%llu ms)\n", __FUNCTION__, g_space_manager.current_space_id,
+          (unsigned long long) (read_os_timer() / (1000 * 1000)));
     struct view *view = space_manager_find_view(&g_space_manager, g_space_manager.current_space_id);
 
     if (space_manager_refresh_application_windows(&g_space_manager)) {
@@ -1110,6 +1127,18 @@ static EVENT_HANDLER(DISPLAY_RESIZED)
     debug("%s: %d\n", __FUNCTION__, did);
     space_manager_mark_spaces_invalid_for_display(&g_space_manager, did);
     event_signal_push(SIGNAL_DISPLAY_RESIZED, context);
+}
+
+static EVENT_HANDLER(VIEW_FOLLOW)
+{
+    // Runs on the event loop thread; param1 carries the generation the timer was armed with.
+    window_manager_view_follow_fire((struct window_manager *) context, param1);
+}
+
+static EVENT_HANDLER(VIEW_FOLLOW_WINDOW)
+{
+    // Runs on the event loop thread; param1 carries the window to bring forward.
+    window_manager_view_follow_window((struct window_manager *) context, param1);
 }
 
 static EVENT_HANDLER(MOUSE_DOWN)
