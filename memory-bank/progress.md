@@ -1,12 +1,24 @@
 # Progress - yabai
 
-## Current Phase: macOS 27 空间创建/窗口聚焦修复 ⏳ (2026-09-15)
+## Current Phase: 全屏还原（窗口 + 视图跟随）⏳ (2026-10-10)
 
 ---
 
 ## Phase History
 
-### Phase 39: macOS 27 (26A428) SA 修复 ⏳ (2026-09-15)
+### Phase 40: 原生全屏还原 —— 送窗口 + 视图跟随 ⏳ (2026-10-10)
+- 背景：27.0.1 全屏退出后窗口与视图都落到该显示器第一个桌面（`domains/space-management/scenarios.md` S10）
+- 7.2.0：进全屏记来源空间（+分屏侧），全屏空间销毁后送回；含一次崩溃事故——对 `space_window_list()` 池内存 `free()` → libmalloc abort，已移除 free（2 处）
+- 7.2.1：视图跟随第一版（重试抢回）→ **实测否掉**：日志显示每次切回第一个桌面都是外部 `space --focus` 命令，重试与它互相放大成反复闪回
+- 7.2.2：只切一次——登记意图 + 等 0.5 秒安静 + 外部空间/窗口命令立即放弃（实测可用但**太慢**：要在 desktop1 等一会）
+- 7.2.3：改**事件驱动**（系统那条 `SPACE_CHANGED` 即"复位完成"信号）→ 实测仍落 desktop1：我们的切换早于系统的空间变化被覆盖，且切完后前台 app 是 cmux，用户的 front-switch 脚本（取 app 的**第一个窗口**）把视图拉回 desktop1
+- 7.2.4 实测暴露循环：我们的切换 → yabai 为被切到前台的 cmux 再发一次 front-switch → 用户的 `window_focused_event_script.sh` 把视图拉回 desktop1（其 `.[0]` 语义 + 空间动画误判）；已修脚本：等动画落定 + 「可见空间 1 秒内刚变过就跳过」+ 整 app 可见性判断（用户授权，备份 `.bak`）
+- 7.2.4：兜底 0.8 → **2 秒**（不抢在系统前面）+ 切换后 150 ms **聚焦被还原的窗口**（前台 app 变成 Discord 且窗口在同桌面，外部脚本无事可做）+ 日志加毫秒时间戳
+- 7.2.5：不再由 yabai 切桌面（抢切会插进用户 front-switch 脚本的判断窗口 → 来回跳）；只聚焦被还原窗口，视图交给脚本即时路径，只有没人切时 0.4 秒后兜底补切。脚本侧回滚掉 `sleep 0.15` + "空间刚变就跳过"（实测卡顿 + 漏跳）
+- 版本：7.2.0 → 7.2.1 → 7.2.2 → 7.2.3 → 7.2.4 → **7.2.5**（OSAX_VERSION 不变）；编译 0 告警 0 错误
+- 状态：⏳ 待部署实测
+
+### Phase 39: macOS 27 (26A428) SA 修复 ✅ (2026-09-15)
 - **环境**: macOS 27.0 (26A428)，Dock 2571.0.6.402，WindowManager.framework 462.0.8
 - **症状**: 系统升级后 space --create / space --focus / window --focus 全部失效
 - **根因 1**: `verify_os_version()` 无 27 分支 → `init_instances()` 提前 return，SA 所有功能失效
@@ -56,8 +68,8 @@
 
 | 文件 | 行数 | 限制 | 状态 |
 |------|------|------|------|
-| activeContext.md | ~100 | 150 | ✅ |
-| progress.md | ~60 | 100 | ✅ |
-| systemPatterns.md | ~78 | 80 | ✅ |
-| techContext.md | ~78 | 80 | ✅ |
+| activeContext.md | 61 | 150 | ✅ |
+| progress.md | 72 | 100 | ✅ |
+| systemPatterns.md | 63 | 80 | ✅ |
+| techContext.md | 57 | 80 | ✅ |
 | projectbrief.md | 22 | 50 | ✅ |

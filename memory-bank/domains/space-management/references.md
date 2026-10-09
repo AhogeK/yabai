@@ -36,6 +36,16 @@
 | ManagedSpace | `spid`、`displayUUID`、类型（user / fullscreen / proxy） |
 | DPPM | `addSpace:forDisplayUUID:` / `removeSpace:` / `moveSpace:toDisplay:displayUUID:` / `addFullscreenSpace:forDisplayUUID:` |
 
+## daemon 日志落点与"写进已删除 inode"陷阱
+
+| 项 | 值 |
+|---|---|
+| launchd plist | `~/Library/LaunchAgents/com.asmvik.yabai.plist` |
+| stdout / stderr | `/tmp/yabai_<user>.out.log` / `/tmp/yabai_<user>.err.log` |
+| 陷阱 | 若日志文件被删（如重装/清理），daemon 仍持旧 fd → 新事件写进**已删除 inode**，文件大小恒为 0（`lsof -p <pid>` 可见 fd 指向该路径但 `ls` 不存在） |
+| 恢复 | 重启 daemon（`yabai --restart-service`）后文件重建 |
+| 事件可见性 | 需 `yabai -m config debug_output on`（重启后默认关闭，不会自动继承） |
+
 ## 空间布局的持久化位置（27.0.1）
 
 | 路径 | 内容 |
@@ -64,5 +74,16 @@ yabai 的两个序号函数（`src/space_manager.c`）：`space_manager_mission_
 | ≤ 15 | Dock `addSpace` | Dock `removeSpace` | Dock `moveSpace` | pattern 按版本分段 |
 | 26.0–26.6 | Dock Swift `space_create_entry`（26.0 `0x1f07d8`；26.6 `0x1f07d4`） | Dock `removeSpace` | Dock `moveSpace` | `dock_spaces` 双路定位 |
 | **27.0** | **Dock 内部 helper `0x2bb62c`（G3′，已实现）**；`WindowManager.framework` 的 `synchronouslyRequestCreateManagedSpace`（G3，断言门不可用） | Dock `removeSpace`（pattern 命中 0x18b9a0） | Dock `moveSpace`（0x18c554） | 创建不再依赖 Dock 偏移 |
+
+## 全屏还原状态（daemon 内部，7.2.x）
+
+| 项 | 位置 | 说明 |
+|---|---|---|
+| `pending_fullscreen_sid` / `pending_fullscreen_src_sid` | `window_manager` | 已捕获的全屏空间与其来源空间 |
+| `view_follow_sid` / `view_follow_window_id` / `view_follow_generation` / `view_follow_abort` | `window_manager` | 视图跟随意图：目标空间 / 待聚焦窗口 / 世代号（作废兜底定时器）/ 放弃标记 |
+| `VIEW_FOLLOW_FALLBACK_SECONDS` / `VIEW_FOLLOW_FOCUS_DELAY_SECONDS` | `window_manager.h` | 0.4 秒兜底补切 / 150 ms 后聚焦窗口 |
+| `window_manager_arm_view_follow()` / `_view_follow_on_space_change()` / `_view_follow_focus_window()` / `_abort_view_follow()` / `_view_follow_fire()` / `_view_follow_window()` | `window_manager.c` | 登记 / 空间变化只聚焦窗口 / 排延迟聚焦 / 让位 / 兜底补切（事件循环线程）/ 聚焦窗口 |
+| `VIEW_FOLLOW` / `VIEW_FOLLOW_WINDOW` 事件 | `event_loop.h` 类型表 + `event_loop.c` 处理器 | 把两步从主线程投递到事件循环线程 |
+| `space_is_visible(sid)` | `space.h` 声明 / `space.c` 内联 | `sid == display_space_id(space_display_id(sid))`，按该空间所属显示器判断 |
 
 入口地址/基线与单例全局见 `dock-reverse-engineering/references.md`。

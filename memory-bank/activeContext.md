@@ -2,134 +2,51 @@
 
 ## Current Work Focus
 
-**7.1.30 空间创建（断言制 + 错误可读化）— 代码完成，待用户安装验证 (2026-09-15)**
+**7.2.5「视图跟随」：只聚焦窗口，不抢着切桌面（2026-10-10）— 编译通过，待实测**
 
-### 🔥 第二轮：PAC 调用未认证（7.1.28 崩溃）→ 已修（7.1.29）
+- 7.2.4 实测（带毫秒时间戳）：我们的切桌面动作**抢在了你的 front-switch 脚本的判断窗口里**——脚本在切换动画中重新判断"前台 app 的窗口不在这"，又把视图拉回去，于是来回跳、并有概率停在 desktop1
+- 7.2.5 改为：
+  - **不再由 yabai 切桌面**；只把被还原的窗口提到前台（`view_follow_on_space_change()` → `view_follow_focus_window()`，0.15 秒后再聚焦）
+  - 前台 app 变成 Discord 且它的窗口就在目标桌面 → 你的脚本（即时路径）自己把视图带过去；yabai 不再与它抢
+  - 只有当**没有任何人**切视图时，yabai 才在 **0.4 秒**（原 2 秒）后补切一次（`view_follow_fire()`：`space_is_visible` / `abort` 判定不变）
+- 脚本侧回滚：去掉上一版加的 `sleep 0.15` 与"可见空间 1 秒内变过就跳过"（实测造成**卡顿感**与**漏跳**）；保留"整 app 可见性"与 `has-focus` 优先
+- 版本：7.2.4 → **7.2.5**；证据：0 告警 0 错误；脚本用影子 yabai 验证（16 ms 无动作 / 133 ms 执行，含原有 0.1 秒）
+- 待办：部署实测（判据：全程最多一次可见切换；`focus window=15973` 后紧跟你的脚本一次跳转）
 
-- **现象**：`yabai -m space --create` 无报错但空间数不变；Dock 3 分钟重启 3 次（17:58:31 / 17:58:41 / 18:01:33）
-- **现场**：`termination.namespace = PAC_EXCEPTION`；frame1 = payload `handle_connection+5112` → `0x3e90: blr x25`
-- **根因**：arm64e 下 `dlsym()` 返回**已签名**指针，裸 `blr` 必崩（实验：`blr`→SIGSEGV / `blraaz`→✅ / clang 对间接调用也生成 `blraaz x8`）
-- **修复**：3 个宏改 `mov x16, fn; blraaz x16`（7.1.29 / OSAX 2.1.33），ABI 独立实测通过
+**7.2.0「全屏记忆」事故 → 已回退重写（2026-10-10）**：`window_manager_remember_geometry` 对 `space_window_list()` 的池内存 `free()` → libmalloc abort 崩溃循环；修正版已去 free（2 处）+ 改用只读 `space_manager_query_view`；现场补丁 `/tmp/fullscreen-restore-7.2.0.patch`；教训见 `systemPatterns.md`
 
-### 🐞 开机主屏无桌面（27.0.1，2026-09-30）——macOS 侧 bug
+**当前焦点**：macOS 27.0.1 系统侧空间恢复问题排查（见下）
 
-- **现象**：开机后主屏没有 space，Mission Control 无 Spaces Bar / `+`；`space --create` 后恢复（重启复现）
-- **证据**：WindowManager 登录日志 `managed space order: [6,6,6,6,6,6,6,6]`（主屏损坏）+ 反复 `No visible space found for display: 37D8832A-…; skipping`；`com.apple.spaces.plist` 含幽灵显示器 `F03C6F6E-…`
-- **责任面**：yabairc 无开机动空间逻辑 → 非 yabai；SA 的 create 只是修复手段；再犯则清幽灵记录/复位 `com.apple.spaces` 后重启（详见 scenarios S9）
+### 🐞 系统侧空间恢复问题 x2（27.0.1）
+
+- **开机主屏无桌面**：WindowManager 日志 `managed space order: [6,6,6,6,6,6,6,6]`（主屏损坏）+ 反复 `No visible space found for display: 37D8832A-…; skipping`；`com.apple.spaces.plist` 含幽灵显示器 `F03C6F6E-…`；`space --create` 可修；daemon 开机以来 create/destroy = 0
+- **全屏退出窗口回落 desktop 1**：全屏空间销毁后系统直接 `SPACE_CHANGED: 50`（= display1 index1），期间无 `window --space` 命令；yabai 侧搬移路径已穷举（命令 / 规则 / 自动指派死代码 / SA 无该 opcode）→ 系统侧行为；**绕过已实现（7.2.1）**
+- **处置**：清幽灵记录 / 复位 `com.apple.spaces`（见 S9）
 
 ### 🔎 系统更新后核查（27.0.1 / 26A434，2026-09-30）
 
-- **SA 与创建路径仍正常**：Dock 版本未变（2571.0.6.402），pattern 命中不变；日志显示当天两次成功创建（space id 50 / 57）
-- **yabai 核心操作正常**：`space --focus 3` 精确落在 display 2 的空间，模型分组与 SLS 原始模型一致
-- **唯一错位**：yabai 的 `index` / 数字选择器是**全局序**，而 macOS 27.0.1 的 Mission Control 按**每显示器独立**编号 → 多显示器下 `focus N` 与"看到的 Desktop N"不一致（详见 space-management/principles.md §1.5 与 scenarios.md S8）
-- 处置：**不改 yabai**（上游语义 + 自洽），在绑定层用 `query --spaces --display` 取"当前显示器的第 N 个"
+- SA 与创建路径正常（Dock 2571.0.6.402，pattern 命中不变，当天两次成功创建）
+- yabai 核心操作正常；唯一错位 = yabai 的 `index` 是**全局序**，27.0.1 Mission Control 按**每显示器独立**编号 → 多显示器下 `focus N` 与"看到的 Desktop N"不一致（`domains/space-management/` §1.5 / S8）；处置：不改 yabai，绑定层用 `query --spaces --display` 取当前显示器第 N 个
 
-### ✅ macOS 27 空间创建已修好（7.1.29，2026-09-15 yabai 端到端实测通过）
+### ✅ macOS 27 空间创建已修好（7.1.29，2026-09-15 端到端实测通过）
 
-**最终机制（G3′）**：调用 Dock 自己的 Swift 创建 helper（pattern 0x2bb62c）——
-`helper(cid, flags=0, type=0, SwiftString(displayUUID), __swiftEmptyArrayStorage) → 新空间 id`
+- 机制（G3′）：调用 Dock 自己的 Swift 创建 helper（pattern 0x2bb62c）`helper(cid, 0, 0, SwiftString(displayUUID), __swiftEmptyArrayStorage) → 新 spid`；完整逆向见 `docs/reverse-engineering-macos27-space-create.md`，领域结论见 `domains/scripting-addition/`、`domains/dock-reverse-engineering/`
+- 最小注入取证（`/tmp/spacetest/minpay.dylib`）：`A displayUUID -> 0xcd`，spaces 9 → 10，Dock 未崩
+- 两个被推翻的假设：**不是 cid 问题**（`[dockConnection]` == `SLSMainConnectionID()`）；**不是 uuid 语义**（显示器 UUID 即可，随机 UUID 属另一路径）
+- 三个坑：签名状态与分支指令配对（未签名裸地址→`blr`；已签名指针 remove/move/setFrontWindow/addSpace→C 调用；dlsym→`blraaz`）；`__swiftEmptyArrayStorage` 不可 dlsym（literal pool slot `0x3c3998` 解码，取不到就不调用）；image 相对 offset 要加在 header 指向的运行时地址
+- `space --destroy` 未动态验证（daemon 侧被 last-user-space 拦下，请求未到 payload）
+- 清理教训：大批删代码后必须核对**数据流**（关键全局量赋值点是否还在），只验"编译 + pattern 命中"不够
 
-**独立验证（脱离 yabai，最小注入负载 `/tmp/spacetest/minpay.dylib`）**：
+### 📋 更早变更（7.1.28 macOS 27 初版支持，2026-09-15，全文见归档）
 
-```
-[minpay] A displayUUID -> 0xcd   spaces 9 -> 10    ← 成功
-[minpay] DONE spaces 9 -> 10                      ← yabai query 确认 10 个空间，Dock 未崩
-```
+- `payload.m`：`verify_os_version()` 加 27 分支（无它则 SA 全灭）；27 路径改走 WindowManager Swift 符号；握手属性 `OSAX_ATTRIB_ADD_SPACE` 兼容三者；DPPM 指纹兜底加 `nil` 判定
+- `arm64_payload.m`：各 `get_*_offset/pattern` 加 27 分支（dock_spaces 0x30000 / dppm 0x40000 / remove+move 0x180000 / fix_animation 0x220000 / set_front_window 新 pattern 命中 0x192bc；add_space 与 space_create_entry 27 无实现 → 0）
+- 结果：初版 7.1.28 的 `space --create` 让 Dock 崩（PAC，见上）；7.1.29 修正
+- 发布（2026-09-15）：ai-base `877e4b1` → `58edb26` → `17318fb`；dev `fbca387` / `0994274`；master `f2edcba` / `15ae877`（逐级 cherry-pick，三支已 push）
 
-**两个被推翻的假设**（别再走回头路）：
+### 🧭 规则体系（2026-09-15 重写，正文见 `AGENTS.md`）
 
-1. **不是 cid 问题**：`[dockConnection]` 实测 == `SLSMainConnectionID()`（1919... 相同）
-2. **不是 uuid 语义问题**：显示器 UUID 即可（Dock 自身 0x1744cc 用随机 UUID 属另一条路径）
-
-**真正的三个坑（都有崩溃样本）**：
-
-| 坑 | 症状 | 正解 |
-|---|---|---|
-| 签名状态与分支指令不配对 | `PAC_EXCEPTION`（两个方向都出现过） | 未签名裸地址→`blr`；**已签名指针（remove/move/setFrontWindow/addSpace）→ C 调用**；dlsym→`blraaz`。曾把 removeSpace 统一改成 `blr`，27 实测崩在 destroy |
-| `dlsym("__swiftEmptyArrayStorage")` = NULL | 崩在 helper 内 `[NULL+0x10]` | 从 literal pool 解码（site pattern 0x1744bc → slot **0x3c3998**）；**取不到就不调用** |
-| image 相对 offset 加错基址 | 崩在 `slide+0x2c0000` | 加在 **header 指向的运行时地址**上 |
-
-**为什么必须在 Dock 内**（实测）：普通进程 `CGSSpaceCreate` 四种参数全 NULL；非 Dock 进程调框架 API 报 *"Couldn't communicate with a helper application."*
-
-**yabai 端到端证据（2026-09-15 19:50，SA 重载后）**：
-
-```
-[yabai-sa][SPACE] dock connection-id getter found (0x10064AAA8)
-[yabai-sa][SPACE] dock space-create helper found (0x10064362C)
-[yabai-sa][SPACE] empty pid array singleton = 0x1f9ea7db8 (call site 0x1004FC4BC, slot 0x10074B998)
-[yabai-sa][SPACE] dock space-create helper returned space id 213
-spaces 10 -> 11
-```
-
-**`space --destroy` 未动态验证**：daemon 侧被 `space_manager_is_space_last_user_space` 拦下（"acting space is the last user-space..."），请求未到 payload；该路径本次只改了分支指令（`blr`），参数/ABI 沿用 26 代已验证版本。
-
-**清理教训（本轮踩到）**：大批删代码后只验证"编译 + 无告警 + pattern 命中"不够——必须核对**数据流**（关键全局量的赋值点是否还在）。本轮就是删 WM 块时把同段的 G3′ 解析代码一起删了，靠加载日志缺 3 行才发现。
-
-## 📋 上一轮变更 (macOS 27 初版支持, 7.1.28)
-
-**版本**: 7.1.27 → **7.1.28**，OSAX_VERSION 2.1.31 → **2.1.32**
-
-**环境**: macOS 27.0 (26A428)，Dock **2571.0.6.402**，WindowManager.framework 462.0.8
-
-**根因**（两条同时存在）:
-1. `verify_os_version()` 没有 majorVersion 27 分支 → `init_instances()` 直接 return，**所有 SA 功能全灭**（这是"再次失效"的直接原因）
-2. macOS 27 Dock **删除了 Swift 空间创建入口**（26.6 的 `0x1f07d4`），空间管理下沉到 `WindowManager.framework`
-
-**修复内容**:
-- `src/osax/payload.m`
-  - `verify_os_version()` 增加 27 分支（x86_64 分支不加，27 无 Intel）
-  - 新增 WindowManager 符号解析（`init_instances`，majorVersion ≥ 27）:
-    `$s13WindowManagerAACMa` / `...6sharedABvgZ` / `...CreateManagedSpace...tKF` /
-    `$sSS10FoundationE36_unconditionallyBridgeFromObjectiveCySSSo8NSStringCSgFZ` / `swift_errorRelease`
-  - `do_space_create()` 新增 27 路径：Swift ABI 调用
-    `WindowManager.shared.synchronouslyRequestCreateManagedSpace(displayUUID:)`
-    （x20=self，x0/x1=Swift String，x0=新 spid，**x21=swift_error***）
-  - 新增 3 个 asm 宏 + `swift_string_t`
-  - 握手属性 `OSAX_ATTRIB_ADD_SPACE` 改为 `add_space_fp || space_create_entry_fp || wm_create_space_fp`
-  - DPPM 指纹兜底块加 `dp_desktop_picture_manager == nil` 判定（27 上指纹已失效，避免误报 ERROR）
-- `src/osax/arm64_payload.m`：全部 `get_*_offset/pattern` 增加 27 分支
-  - dock_spaces 0x30000（pattern 不变，命中 0x30a98 → 全局 0x100409bb0）
-  - dppm **0x40000**（旧 0x70000 会错过 0x509fc → 全局 0x100409c50）
-  - remove_space / move_space **0x180000**（命中 0x18b9a0 / 0x18c554）
-  - fix_animation **0x220000**（命中 0x227508）
-  - set_front_window 0x10000 + **新 pattern**（首 4 字节改通配）→ 唯一命中 0x192bc
-  - add_space / space_create_entry → 0（27 无 Dock 内实现）
-
-**验证**: 静态 ✅（pattern 命中/唯一性/全局解码 + 双架构编译）；动态 ❌ **初版 7.1.28 实际不可用**——`space --create` 让 Dock 崩溃（PAC 调用问题，见上文 🔥），其余能力（dock_spaces/DPPM/removeSpace/moveSpace/setFrontWindow 解析）均正常
-
-**文档**: `docs/reverse-engineering-macos27-space-create.md`（含 dyld cache 提取与 pattern 校验脚本）
-
-**发布** (2026-09-15):
-- ai-base `877e4b1` fix → `58edb26` bump 7.1.28 → `17318fb` AI 记忆
-- dev `fbca387` → `0994274`（cherry-pick，无 AI 文件）；master `f2edcba` → `15ae877`（从 dev 逐级 pick）
-- 三支已 push 至 origin，校验一致（src/osax 相同、dev/master 工作树相同、无 AI 文件）
-
----
-
-## 🧭 规则优化 (2026-09-15)
-
-对照 `../ctt-server/AGENTS.md` 重写本文件（R1-R18），补强四块：
-
-- **R5 / R5.5 授权机械判定**：关键词表（提交≠推送≠pick）+ 执行前自检清单 + 「修好它 ≠ 提交」作用域闭合
-- **R14 分支管理与提交拆分**：ai-base → dev → master 只能逐级 cherry-pick（禁 merge/rebase/反向 pick）+ 功能/版本/AI 记忆三段提交顺序 + 校验清单
-- **R15 版本号管理**：五个版本号位置表（yabai.c / install.sh / common.h / CHANGELOG / yabai.1）+ 全局检查
-- **R12 记忆冷归档**：修剪 = 归档而非删除（`memory-bank/archive/`）
-- **R19 领域知识库**（补齐 R25 缺口）：新增 `memory-bank/domains/`，建 3 个领域（`dock-reverse-engineering` / `scripting-addition` / `space-management`），每领域五件套 `meta / principles / scenarios / practices / references` + `domains/README.md` 索引；同步把 `systemPatterns.md` / `techContext.md` 里的领域专属内容收敛为指针（R19「不得两处重复」）
-
-**领域层落点**：
-
-| 领域 | 承载的可复用判断 |
-|---|---|
-| `dock-reverse-engineering` | 稳定/不稳定字节判据、基线窗口语义（`0x1286a0` 首匹配）、单例识别三要素、系统升级适配七步流程、dyld cache 提取与语义画像脚本 |
-| `scripting-addition` | 属性位必须与真实能力一致、payload 改动必 bump `OSAX_VERSION`、代际分流不改协议、注入/重启由用户执行、沙箱静默失败 |
-| `space-management` | 空间创建三代实现表、display UUID 为主键、创建成功的不变量、SLS 与 Dock 模型双写、DPPM 通知 |
-
-**二轮补强（参照《架构师 Agent / 知识库体系》方法论，2026-09-15）**：
-- **R1 渐进式加载**：会话开始只读 `AGENTS.md` + 时间线层；领域文件按任务类型路由加载（新增路由表），并写明**回源原则**（binary 行为以实测为准 / 契约以源码为准 / 历史原因以 docs 为准）
-- **R19 条目元数据（强制）**：每个领域文件头部标注 `系统基线 / 最后验证 / 状态（已验证·含推论·方法论） / 来源`；正文推论就地标 `[推论]`，不得把推断伪装成事实
-- **R19 维护触发表**：macOS 大版本升级 → 全域复核；`arm64_payload.m` / `payload.m` / `common.h` / `sa.[hm]` / `space_manager.c` 改动 → 各自对应需复核的领域文件
-- **R19 写回规则**：`docs/` 只作证据链，确认后的结论必须写回领域文件
-- **meta 增「别名与易混概念」**：dock-RE（pattern/基线、入口/早退点、全局/单例、0 命中/不存在、Dock/DockCore/WindowManager）、SA（SA/osax、payload/loader、属性位/opcode、两个 socket、代际分流/协议变更）、space（space/desktop、spid/sid、UUID/CGDirectDisplayID、Spaces/ManagedSpace、user/fullscreen space）
+- R5/R5.5 授权机械判定（提交≠推送≠pick + 执行前自检）· R14 三级 cherry-pick + 功能/版本/记忆三段提交 · R15 五处版本号 · R12 冷归档 · R19 领域知识库（3 领域 × 五件套 + 条目元数据 + 维护触发表）
 
 ## 已知设计限制 (不处理)
 
@@ -140,10 +57,6 @@ spaces 10 -> 11
 
 ---
 
-## 📚 历史锚点（macOS 26 世代）
+## 📚 历史锚点
 
-- macOS 26 空间创建: `space_create_entry(displayID, Spaces self)`，调用约定 `x0=display_id, x20=Spaces`
-- 26.6 入口 `0x1f07d4`；dock_spaces 双重保险（pattern + DOUBLE-ANCHOR 回溯 adrp/add）
-- 逆向方法论沉淀: `docs/my-reverse-engineering-learn.md`、`docs/macos26/`
-- 上游同步 30 commits (2026-04-26) → 版本 7.1.25，详见 `docs/upstream-sync-report-2026-04-26.md`
-- Opacity 优化: `window_manager_enforce_rule_opacity()` 专用函数
+- macOS 26 世代（空间创建入口 `0x1f07d4`、dock_spaces 双重保险、上游同步 30 commits → 7.1.25、opacity 优化 `window_manager_enforce_rule_opacity()`）：细节已归档 `archive/activeContext-2026-10.md`，领域结论见 `domains/`
