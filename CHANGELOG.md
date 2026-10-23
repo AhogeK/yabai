@@ -1,3 +1,7 @@
+## [7.2.6] - 2026-10-23
+### Fixed
+- `space --create` on macOS 27 passed the display UUID to the Dock create helper, which stores that string as the new space's identity. Every space created by yabai on one display therefore shared a single identity; WindowManager persists spaces by identity and its login restore mapped all duplicates onto one space (`managed space order: [6, 6, 6, ...]`), leaving Mission Control with one desktop and no wallpaper. The helper now receives a freshly generated UUID, the same way the system's own "+" button creates a space; the display UUID is still used to verify where the new space landed
+
 ## [7.2.5] - 2026-10-10
 ### Changed
 - Fullscreen view follow no longer switches the space itself. Racing to switch it collided with whatever else follows the front application: the log showed the user's front-app signal script re-deciding in the middle of our switch and pulling the view back, which is what made the view bounce. It now only brings the restored window forward - the front application then owns a window on the space it should be seen on, so the follow itself happens through the user's own (instant) path - and switches the space on its own only if nothing else did; that check runs after 0.4s instead of 2s
