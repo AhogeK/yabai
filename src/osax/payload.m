@@ -1007,15 +1007,34 @@ static void do_space_create(char *message)
         uintptr_t string_word0 = 0;
         uintptr_t string_word1 = 0;
 
-        if (swift_string_from_objc_fp != NULL && display_uuid != NULL) {
-            asm__call_swift_string_from_objc((__bridge NSString *)display_uuid, swift_string_from_objc_fp, string_word0, string_word1);
+        // The helper stores whatever string we hand it as the new space's identity
+        // (CGSSpaceCreate options = @{type, uuid, pid}). Passing the display UUID here makes
+        // every space created on that display share one identity, and WindowManager's login
+        // restore then maps all of them onto a single space ([6, 6, 6, ...] with no desktop
+        // background). The system's own "+" button gives each space a fresh UUID; do the same
+        // and keep the display UUID only for placement verification.
+        CFUUIDRef space_uuid_ref = CFUUIDCreate(kCFAllocatorDefault);
+        CFStringRef space_uuid = space_uuid_ref ? CFUUIDCreateString(kCFAllocatorDefault, space_uuid_ref) : NULL;
+        if (space_uuid_ref) CFRelease(space_uuid_ref);
+        if (space_uuid == NULL) {
+            NSLog(@"[yabai-sa][SPACE] ERROR: could not generate a space UUID, aborting");
+            CFRelease(display_uuid);
+            return;
         }
+
+        if (swift_string_from_objc_fp == NULL) {
+            NSLog(@"[yabai-sa][SPACE] ERROR: Swift string bridge unavailable, aborting");
+            CFRelease(space_uuid);
+            CFRelease(display_uuid);
+            return;
+        }
+        asm__call_swift_string_from_objc((__bridge NSString *)space_uuid, swift_string_from_objc_fp, string_word0, string_word1);
 
         // macOS 27: the Dock's own Swift helper is the same code the WindowManager
         // server runs for the Mission Control "+" button (byte-identical function).
         // Called in-process with the Dock's connection id, so no WindowManager admin-XPC
         // assertion is involved (that route never worked and has been removed).
-        //   helper(cid, flags=0, type=0 /* user space */, String(displayUUID), [])
+        //   helper(cid, flags=0, type=0 /* user space */, String(spaceUUID), [])
         if (dock_space_create_fp != 0 && swift_empty_array_storage != NULL) {
             // swift_empty_array_storage MUST be the real singleton: on the empty-array path the
             // helper releases it and reads [ptr+0x10] as the element count, so a NULL or
@@ -1023,9 +1042,10 @@ static void do_space_create(char *message)
             uint64_t new_space_id = 0;
             int cid = 0;
 
-            NSLog(@"[yabai-sa][SPACE] dock space-create helper: entry=%llx getter=%llx uuid=%s",
+            NSLog(@"[yabai-sa][SPACE] dock space-create helper: entry=%llx getter=%llx display=%s uuid=%s",
                   dock_space_create_fp, dock_cid_getter_fp,
-                  display_uuid != NULL ? [(__bridge NSString *)display_uuid UTF8String] : "(nil)");
+                  [(__bridge NSString *)display_uuid UTF8String],
+                  [(__bridge NSString *)space_uuid UTF8String]);
 
             if (dock_cid_getter_fp != 0) {
                 asm__call_dock_cid_getter(dock_cid_getter_fp, cid);
@@ -1050,10 +1070,18 @@ static void do_space_create(char *message)
 
             NSLog(@"[yabai-sa][SPACE] dock space-create helper returned space id %llu", new_space_id);
             if (new_space_id != 0) {
+                CFStringRef landed_uuid = SLSCopyManagedDisplayForSpace(SLSMainConnectionID(), new_space_id);
+                if (landed_uuid != NULL && !CFEqual(landed_uuid, display_uuid)) {
+                    NSLog(@"[yabai-sa][SPACE] WARNING: new space %llu landed on display %@ instead of %@",
+                          new_space_id, (__bridge NSString *)landed_uuid, (__bridge NSString *)display_uuid);
+                }
+                if (landed_uuid) CFRelease(landed_uuid);
+                CFRelease(space_uuid);
                 CFRelease(display_uuid);
                 return;
             }
         }
+        CFRelease(space_uuid);
 
         // The admin-XPC route (WindowManager.synchronouslyRequestCreateManagedSpace + the
         // layout-control assertion) was implemented in 7.1.28-7.1.31 and never worked: the
