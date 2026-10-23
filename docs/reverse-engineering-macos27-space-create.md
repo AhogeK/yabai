@@ -270,7 +270,7 @@ dock_cid_getter          : base 0x2c0000 → 命中 0x2c2aa8
 ### 5.5 实现要点（7.1.33 / OSAX 2.1.37）
 
 - 调用：`asm__call_dock_space_create(cid, 0, 0, uuid_w0, uuid_w1, __swiftEmptyArrayStorage, fn, spid)`
-  - `uuid` 用既有的 `String(NSString)` 桥接（`$sSS10FoundationE36…`），与 Dock 自身调用点一致
+  - `uuid` 用既有的 `String(NSString)` 桥接（`$sSS10FoundationE36…`）；该字符串是**新空间身份**，必须是新生成的 UUID（7.2.6 更正，见 6.5）
   - `pids` 传 `dlsym("__swiftEmptyArrayStorage")`（空数组单例必须传真对象：helper 命中空数组分支后会对其做 `swift_bridgeObjectRelease`）
   - 主线程调用（Dock 的每个调用点都在主线程）
 - pattern 得到的是**未签名**地址 → 用普通 `blr`（只有 `dlsym()` 指针才需要 `blraaz`）
@@ -318,14 +318,27 @@ dock_cid_getter          : base 0x2c0000 → 命中 0x2c2aa8
 ### 6.4 可用配方（macOS 27.0）
 
 ```
-helper(cid, flags=0, type=0, SwiftString(displayUUID), __swiftEmptyArrayStorage)  → 新空间 id
+helper(cid, flags=0, type=0, SwiftString(spaceUUID), __swiftEmptyArrayStorage)  → 新空间 id
   cid   = Dock 缓存的连接 id（getter 0x2c2aa8；实测 == SLSMainConnectionID）
-  uuid  = 显示器 UUID（临时生成随机 UUID 的对照分支未用上）
+  uuid  = **新生成的空间身份 UUID**（7.2.6 起用 CFUUIDCreate；绝不能传显示器 UUID，见 6.5）
   pids  = literal slot（图像相对 0x3c3998）
   调用：主线程 + blr（裸地址）
 ```
 
 按此配方 7.1.33/7.1.34 在 `payload.m` 的 macOS 27 分支落地。
+
+### 6.5 更正（2026-10-23，7.2.6）：第 4 参数是空间身份，不是显示器绑定
+
+早期配方把显示器 UUID 传进第 4 个参数，并在 6.2 的对照实验里把“随机 UUID 分支”标记为未使用——这是一个**语义误判**，后果是开机丢桌面：
+
+- Dock helper 把该字符串原样放进 `CGSSpaceCreate` 的 options（`@{type, uuid, pid}`），`CGSSpaceCreate` 把它写成新空间的 `uuid`；它不是“目标显示器”的提示。
+- 因此同显示器上每个由 yabai 创建的空间都共享一个身份。`com.apple.spaces` 按 `uuid` 持久化空间，登录恢复按身份匹配活空间；重复身份全部映射到同一个 `id`。
+- 实测证据（2026-10-23）：
+  - 系统 Mission Control “+” 新建空间 id 33 → `uuid=442D311F-CA46-5764-70F2-BB26229F5E08`（唯一）
+  - yabai `space --create` 新建空间 id 26 → `uuid=37D8832A-2D66-02CA-B9F7-8F30A301B230`（= 显示器 UUID）
+  - 后果：`WSSpaceManager: managed space order: [6, 6, 6, 6, 6, 6, 6]`，主屏壁纸丢失；`com.apple.spaces` 中主屏 8 条记录共享同一 `uuid`
+- 修复（7.2.6 / OSAX 2.1.34）：`payload.m` 用 `CFUUIDCreate` + `CFUUIDCreateString` 生成新 UUID 传入；创建后用 `SLSCopyManagedDisplayForSpace` 校验落点，不符打 WARNING。
+- 恢复旧模型：`defaults delete com.apple.spaces` + `killall cfprefsd` + 注销/重启（删除后 plist 变 42 字节空壳 `{}` 属正常）。
 
 ## 附录 A：dyld shared cache 镜像提取（可复用）
 

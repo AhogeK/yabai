@@ -1,12 +1,20 @@
 # Progress - yabai
 
-## Current Phase: 全屏还原（窗口 + 视图跟随）⏳ (2026-10-10)
+## Current Phase: 空间身份修复（7.2.6）✅ (2026-10-23)
+
+- 已部署并闭环：清理 `com.apple.spaces` 后注销/重启，模型重建为每显示器 1 个空间（1/6/7），壁纸恢复正常
 
 ---
 
 ## Phase History
 
-### Phase 40: 原生全屏还原 —— 送窗口 + 视图跟随 ⏳ (2026-10-10)
+### Phase 41: 空间身份修复 —— 主屏失背景根因 ✅ (2026-10-23)
+- 根因：macOS 27 `space --create` 把显示器 UUID 当新空间身份；系统 “+” 用每次新生成的 UUID（对照实测：id 33 唯一 vs id 26 = 显示器 UUID）
+- 机制：相同身份在 `com.apple.spaces` 中重复 → 开机恢复按身份匹配 → 全部塌缩到同一 id → Mission Control 只见 1 个桌面、无壁纸
+- 修复：`src/osax/payload.m` create 传 `CFUUIDCreate` 新 UUID + 落点显示器校验；版本 7.2.5→7.2.6，OSAX 2.1.33→2.1.34
+- 状态：编译 0 警告；已部署实测（新空间 uuid 唯一）+ 清理旧模型后重启验证通过（15:52，order [1]/[6]/[7]）
+
+### Phase 40: 原生全屏还原 —— 送窗口 + 视图跟随 ✅ (2026-10-10)
 - 背景：27.0.1 全屏退出后窗口与视图都落到该显示器第一个桌面（`domains/space-management/scenarios.md` S10）
 - 7.2.0：进全屏记来源空间（+分屏侧），全屏空间销毁后送回；含一次崩溃事故——对 `space_window_list()` 池内存 `free()` → libmalloc abort，已移除 free（2 处）
 - 7.2.1：视图跟随第一版（重试抢回）→ **实测否掉**：日志显示每次切回第一个桌面都是外部 `space --focus` 命令，重试与它互相放大成反复闪回
@@ -69,8 +77,8 @@
 
 | 文件 | 行数 | 限制 | 状态 |
 |------|------|------|------|
-| activeContext.md | 61 | 150 | ✅ |
-| progress.md | 72 | 100 | ✅ |
+| activeContext.md | 30 | 150 | ✅ |
+| progress.md | 84 | 100 | ✅ |
 | systemPatterns.md | 63 | 80 | ✅ |
 | techContext.md | 57 | 80 | ✅ |
 | projectbrief.md | 22 | 50 | ✅ |

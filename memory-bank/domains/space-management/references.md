@@ -54,7 +54,7 @@
 | `~/Library/Application Support/com.apple.windowmanager/state.plist` | 窗口分组状态（与空间无关） |
 | `defaults read com.apple.windowmanager` | 仅 UI 偏好（无空间布局） |
 
-**脏数据特征**：出现当前系统不存在的显示器 UUID（幽灵记录）；某显示器的 `Spaces` 重复同一 `id64` 或为空。
+**脏数据特征**：出现当前系统不存在的显示器 UUID（幽灵记录）；某显示器的 `Spaces` 重复同一 `id64`、为空，或多个条目共享同一 `uuid`（开机恢复会全部塌缩到同一 id）。
 
 ## SLS 空间模型的关键字段（27.0.1 实测）
 

@@ -11,7 +11,7 @@
 | G1 | ≤ 25 | Dock `addSpace` 函数 | `x0` = new_space、`x20` = display_space（insert-after 语义） |
 | G2 | 26.x | Dock 内 Swift `space_create_entry` | `x0` = display_id、`x20` = Spaces 单例；入口随版本漂移（26.6 → `0x1f07d4`） |
 | G3 | **27+** | `WindowManager.framework`：`synchronouslyRequestCreateManagedSpace(displayUUID:)` | 框架导出符号（dlsym），`x20` = WM 实例、`x0/x1` = UUID 字符串、`x21` = 错误、返回新 spid |
-| G3′ ✅yabai 端到端实测 | **27+（唯一可用）** | Dock 内 Swift helper（与 WindowManager.app 同源同形）：`helper(cid, flags, type, displayUUID, pids) → CGSSpaceCreate` | Dock 自己的连接 id（懒加载 getter）+ 自建 options 字典；**不经过 admin XPC，无断言门**。G3 的同代 API 因 `layoutControlHolder` 断言对 Dock 不可得而失败 |
+| G3′ ✅yabai 端到端实测 | **27+（唯一可用）** | Dock 内 Swift helper（与 WindowManager.app 同源同形）：`helper(cid, flags, type, spaceUUID, pids) → CGSSpaceCreate` | 第 4 参数是**新空间身份**（原样进 `CGSSpaceCreate` options 的 `uuid`），必须传新生成的 UUID；显示器 UUID 只用于创建后校验落点。Dock 自己的连接 id（懒加载 getter）+ 自建 options 字典；**不经过 admin XPC，无断言门**。G3 的同代 API 因 `layoutControlHolder` 断言对 Dock 不可得而失败 |
 
 对新系统一律**先判断当前属于哪一代**，再决定改偏移还是换 API；不要默认"还是老机制"。
 
@@ -23,13 +23,15 @@
 - 硬编码 1..9 的绑定会打错显示器 → 改成按当前显示器取第 N 个：`yabai -m query --spaces --display | jq -r '.[N-1].index'` 再喂给命令；
 - **不要**为了对齐 UI 去改 yabai 的 index 语义（上游定义 + 破坏既有脚本）。
 
-## 2. display UUID 是空间操作的唯一主键
+## 2. display UUID 用于绑定，空间身份必须唯一
 
-空间创建/移动/壁纸同步都按显示器 UUID 绑定：`SLSCopyManagedDisplayForSpace()` 取 UUID → 传给目标 API；`CGDirectDisplayID`（`CGMainDisplayID` / `CGGetActiveDisplayList`）仅用于本机比对。**禁止**用 display index 做跨 API 传递。
+- **移动/壁纸同步**按显示器 UUID 绑定：`SLSCopyManagedDisplayForSpace()` 取 UUID → 传给目标 API；`CGDirectDisplayID` 仅用于本机比对。**禁止**用 display index 做跨 API 传递。
+- **创建**时 Dock helper 的第 4 个参数是**新空间身份**，不是显示器绑定：传入什么字符串，`CGSSpaceCreate` 就把它写成该空间的 `uuid`。必须每次生成新 UUID（与系统 “+” 一致）；传显示器 UUID 会让同显示器所有空间共享身份。
 
 ## 3. 创建成功的不变量
 
-新空间创建后必须在 `[Spaces spacesForDisplay:<uuid>]` 中出现且 `spid` 有效；否则视为失败（即使 API 返回成功）。
+- 新空间创建后必须在 `[Spaces spacesForDisplay:<uuid>]` 中出现且 `spid` 有效；否则视为失败（即使 API 返回成功）。
+- **身份唯一**：同一显示器上不得存在两个 `uuid` 相同的空间。`com.apple.spaces` 按身份持久化；开机恢复时重复身份全部映射到同一 `id`，表现为 `managed space order: [6,6,…]`、Mission Control 只剩一个桌面、壁纸丢失。实测：系统 “+” 的空间 `uuid=442D311F…` 唯一，而 7.2.5 及以前由 yabai 创建的空间 `uuid` = 显示器 UUID。
 
 ## 4. 切换空间要同时动 SLS 与 Dock 模型
 

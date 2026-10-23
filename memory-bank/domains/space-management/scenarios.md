@@ -66,6 +66,10 @@ E [com.apple.windowmanagement:login] No visible space found for display: 37D8832
 3. 预防：备份后清掉幽灵记录或整体复位该域（`defaults delete com.apple.spaces` + `killall cfprefsd`），**重启**让系统重建默认布局；重启前不要指望 yabai 常驻修复。
 4. 判定责任：yabai 的 yabairc 只要没有开机动空间的 signal/脚本，就不可能是原因；SA 的 create 只是修复手段。
 
+**更正（2026-10-23，7.2.6）**：第 4 条**不成立**。决定性对照实测——系统 Mission Control “+” 建的空间 id 33 → `uuid=442D311F…`（唯一）；yabai 建的空间 id 26 → `uuid=37D8832A…`（显示器 UUID）。即每次 `space --create` 都在写入同一身份的空间；`com.apple.spaces` 按身份持久化，开机恢复时重复身份全部映射到同一空间（`[6,6,…]`），桌面层取不到壁纸。因此“第 1 条 `space --create` 立刻恢复”只是临时遮盖并**加重污染**；正解是 create 传新 UUID（7.2.6）。
+
+**验证（2026-10-23 15:52）**：`defaults delete com.apple.spaces` + `killall cfprefsd` + 注销/重启后，模型重建为每显示器 1 个空间（`order [1] / [6] / [7]`，`query --spaces` count=unique=3），壁纸恢复。删除后 plist 变成 42 字节空壳（`{}`）属正常，不是删除失败。
+
 ## S10. 原生全屏退出后窗口跑到该显示器第一个桌面（27.0.1 实测，系统侧）
 
 **现象**：某显示器有多个桌面，窗口在 desktop 2/3，进入原生全屏（如视频通话）后退出 → **窗口与该显示器一起回到 desktop 1**。

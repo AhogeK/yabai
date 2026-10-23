@@ -92,3 +92,7 @@ DEVELOPER_DIR=/Library/Developer/CommandLineTools make BUILD_PATH=/tmp/<topic>/b
 1. **签名状态决定分支指令**（本域最易错）：`ptrauth_sign_unauthenticated` 过的指针（addSpace/removeSpace/moveSpace/setFrontWindow）→ C 调用（`braaz`）；pattern 扫出的**未签名**裸地址（27 的 create helper / cid getter，26 的 space_create_entry）→ 裸 `blr`；dlsym 指针 → `blraaz`。**三者不可互替**，27 上双向都踩过崩溃。
 2. **Swift 私有单例不能 dlsym**：`__swiftEmptyArrayStorage` 在 Dock 内 `dlsym(RTLD_DEFAULT, …)` 返回 NULL；传 NULL 会让 Dock 崩在 helper 内（`[NULL+0x10]`）。正解是从调用点 `adrp+ldr` 解码 literal pool，且**解析失败时跳过调用**而不是传 NULL。
 3. **主线程**：Dock 的创建调用点都在主线程，payload 也要 `dispatch_sync(dispatch_get_main_queue(), …)`；注意 block 内 asm 输出操作数需经局部变量再写回（block 捕获是 const）。
+
+### 空间身份：Swift String 参数就是新空间的 uuid（2026-10-23 更正）
+
+create helper 的第 4 个参数（Swift String）原样进入 `CGSSpaceCreate` 的 `@{type, uuid, pid}`，**它就是新空间的身份**。绝不能传显示器 UUID：同显示器上所有由 yabai 创建的空间会共享一个身份，WindowManager 按身份持久化并在开机恢复，重复身份全部塌缩到同一 id（`managed space order: [6,6,…]`）→ Mission Control 只剩 1 个桌面、无壁纸。系统 “+” 每次生成新 UUID（实测 id 33 = `442D311F…`）；payload 用 `CFUUIDCreate` + `CFUUIDCreateString` 生成后传入，显示器 UUID 只用于落点校验。
