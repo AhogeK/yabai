@@ -425,3 +425,7 @@ spaces 10 -> 11
 ## 📚 历史锚点
 
 - macOS 26 世代（空间创建入口 `0x1f07d4`、dock_spaces 双重保险、上游同步 30 commits → 7.1.25、opacity 优化 `window_manager_enforce_rule_opacity()`）：细节已归档 `archive/activeContext-2026-10.md`，领域结论见 `domains/`
+
+---
+
+> **更正（2026-10-23，7.2.6）**：上文“不是 uuid 语义（显示器 UUID 即可，随机 UUID 属另一路径）”的结论**错误**。`CGSSpaceCreate` 的 `uuid` 参数是**新空间身份**；传显示器 UUID 会让同显示器所有空间共享身份，导致 `com.apple.spaces` 开机恢复塌缩、主屏丢壁纸。证据与修复见 `domains/scripting-addition/practices.md`、`domains/space-management/principles.md` 与 `docs/reverse-engineering-macos27-space-create.md` §6.5。
