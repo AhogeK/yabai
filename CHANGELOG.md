@@ -1,3 +1,7 @@
+## [7.2.14] - 2026-10-29
+### Fixed
+- Focusing a window on a hidden space animated the implicit macOS space switch, so same-application window cycling across desktops felt like a desktop slide. `window --focus` now switches the target space through the scripting addition first (the same path as `space --focus`) and falls back to the native switch only if that fails
+
 ## [7.2.13] - 2026-10-28
 ### Fixed
 - The 27.2 profile rejected the Swift empty-array literal pool slot because it lives in `__DATA_CONST`, not `__DATA`, so the create helper was never called. Data checks now accept `__DATA`, `__DATA_CONST` and `__AUTH_CONST`
