@@ -279,8 +279,8 @@ static int scripting_addition_perform_validation(void)
     }
 
     if (string_equals(version, OSAX_VERSION)) {
-        if ((attrib & OSAX_ATTRIB_ALL) == OSAX_ATTRIB_ALL) {
-            notify("scripting-addition", "payload v%s", version);
+        if ((attrib & OSAX_ATTRIB_REQUIRED) == OSAX_ATTRIB_REQUIRED) {
+            notify("scripting-addition", "payload v%s (0x%X)", version, attrib);
             return 0;
         }
 

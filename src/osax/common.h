@@ -14,13 +14,12 @@
 #define OSAX_ATTRIB_SET_WINDOW      0x20
 #define OSAX_ATTRIB_ANIM_TIME       0x40
 
-#define OSAX_ATTRIB_ALL             (OSAX_ATTRIB_DOCK_SPACES | \
-                                     OSAX_ATTRIB_DPPM | \
-                                     OSAX_ATTRIB_ADD_SPACE | \
+// The daemon only needs the space capabilities the user can actually drive. DPPM, window
+// fronting and the animation-time patch are optional: on macOS 27.2 they have no verified
+// entry point, so a payload that omits them is still fully usable.
+#define OSAX_ATTRIB_REQUIRED        (OSAX_ATTRIB_ADD_SPACE | \
                                      OSAX_ATTRIB_REM_SPACE | \
-                                     OSAX_ATTRIB_MOV_SPACE | \
-                                     OSAX_ATTRIB_SET_WINDOW | \
-                                     OSAX_ATTRIB_ANIM_TIME)
+                                     OSAX_ATTRIB_MOV_SPACE)
 
 enum sa_opcode
 {

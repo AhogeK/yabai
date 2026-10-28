@@ -64,6 +64,9 @@ extern CFStringRef SLSCopyManagedDisplayForSpace(int cid, uint64_t sid);
 extern void SLSMoveWindowsToManagedSpace(int cid, CFArrayRef window_list, uint64_t sid);
 extern void SLSShowSpaces(int cid, CFArrayRef space_list);
 extern void SLSHideSpaces(int cid, CFArrayRef space_list);
+extern void CGSSpaceDestroy(int cid, uint64_t sid);
+extern void CGSMoveManagedSpaceToDisplayIndex(int cid, uint64_t sid, CFStringRef display, uint32_t flags);
+extern void SLSTransactionMoveManagedSpaceToDisplayAfterSpace(CFTypeRef tx, uint64_t sid, CFStringRef display, uint64_t after_sid);
 extern CFTypeRef SLSTransactionCreate(int cid);
 extern CGError SLSTransactionCommit(CFTypeRef transaction, int synchronous);
 extern CGError SLSTransactionOrderWindowGroup(CFTypeRef transaction, uint32_t wid, int order, uint32_t rel_wid);
@@ -99,6 +102,7 @@ static void *swift_string_from_objc_fp;   // String(NSString) bridge
 #endif
 static uint64_t dock_space_create_fp;     // needed unguarded: reported in the handshake attributes
 static bool macOSSequoia;
+static bool dock_build_272;   // Dock 2571.1.32.402 (macOS 27.2): dedicated, build-pinned profile
 
 // macOS 27+: space creation is owned by WindowManager.framework (linked into Dock).
 // Swift entry points are resolved by mangled name so no Dock offset is required.
@@ -200,7 +204,47 @@ static uint64_t image_slide(void)
     return 0;
 }
 
+// Absolute end of the host executable's __TEXT segment. Pattern scans must never read past it:
+// after an OS update the hardcoded search windows can extend into the segment's guard page,
+// which faults inside Dock - and a Dock crash takes the whole desktop with it.
+static uint64_t scan_limit = 0;
+
+static uint64_t text_segment_end(void)
+{
+    const struct segment_command_64 *command = getsegbyname("__TEXT");
+    if (command == NULL) return 0;
+
+    uint64_t slide = image_slide();
+    if (slide == (uint64_t)-1) return 0;   // image_slide() reports failure as -1
+    return command->vmaddr + command->vmsize + slide;
+}
+
 #if __arm64__
+// True when [addr, addr+size) lies inside the named segment of the host executable.
+static bool address_in_segment(uint64_t addr, const char *segname, uint64_t size)
+{
+    const struct segment_command_64 *seg = getsegbyname(segname);
+    if (seg == NULL) return false;
+
+    uint64_t slide = image_slide();
+    if (slide == (uint64_t)-1) return false;
+
+    uint64_t start = seg->vmaddr + slide;
+    uint64_t end = start + seg->vmsize;
+    return addr >= start && addr + size <= end;
+}
+
+// Literal pools and Objective-C metadata live in different data segments depending on the
+// build (__DATA, __DATA_CONST, __AUTH_CONST), so accept any of them.
+static bool address_in_data_segment(uint64_t addr, uint64_t size)
+{
+    static const char *names[] = { "__DATA", "__DATA_CONST", "__AUTH_CONST", NULL };
+    for (int i = 0; names[i] != NULL; ++i) {
+        if (address_in_segment(addr, names[i], size)) return true;
+    }
+    return false;
+}
+
 // Decode ADRP + ADD instruction pair to get data address
 // Uses correct sign-extension for 21-bit ADRP immediate
 static uint64_t decode_adrp_add_pair(uint32_t *pc)
@@ -262,7 +306,12 @@ static uint32_t *find_spaces_singleton_instructions(uint64_t baseaddr, uint64_t 
     // UI logic lives in mid-to-late section
     uint8_t *ptr = (uint8_t *)(baseaddr + slide + 0x100000);
     uint8_t *end = (uint8_t *)(baseaddr + slide + 0x400000);
-    
+
+    // Never scan past the host text segment: the guard page beyond it faults in Dock.
+    if (scan_limit == 0) return NULL;
+    if ((uint64_t)end > scan_limit) end = (uint8_t *)scan_limit;
+    if (end <= ptr + 100) return NULL;
+
     for (uint8_t *p = ptr; p < end - 100; p += 4) {
         uint32_t *ins = (uint32_t *)p;
         
@@ -312,6 +361,11 @@ static uint32_t *find_dppm_singleton_instructions(uint64_t baseaddr, uint64_t sl
 {
     uint8_t *ptr = (uint8_t *)(baseaddr + slide + 0x100000);
     uint8_t *end = (uint8_t *)(baseaddr + slide + 0x400000);
+
+    // Never scan past the host text segment: the guard page beyond it faults in Dock.
+    if (scan_limit == 0) return NULL;
+    if ((uint64_t)end > scan_limit) end = (uint8_t *)scan_limit;
+    if (end <= ptr + 40) return NULL;
 
     for (uint8_t *p = ptr; p < end - 40; p += 4) {
         uint32_t *ins = (uint32_t *)p;
@@ -389,11 +443,18 @@ static uint64_t hex_find_seq(uint64_t baddr, const char *c_pattern)
         pattern += 3;
     }
 
+    // Fail closed when the host text range is unknown: an unbounded scan is what crashed Dock.
+    if (scan_limit == 0) return 0;
+
+    uint64_t limit = baddr + 0x1286a0;
+    if (limit > scan_limit) limit = scan_limit;
+    if (limit < baddr + pattern_length) return 0;
+
 loop:
     for (uint64_t counter = 0; counter < pattern_length; ++counter) {
         if ((buffer_b[counter] == 0) && (((char *)addr)[counter] != buffer_a[counter])) {
             addr = (uint64_t)((char *)addr + 1);
-            if (addr - baddr < 0x1286a0) {
+            if (addr + pattern_length <= limit) {
                 goto loop;
             } else {
                 return 0;
@@ -478,12 +539,135 @@ static bool verify_os_version(NSOperatingSystemVersion os_version)
     return false;
 }
 
+// Offsets and patterns are verified against exact Dock builds. Fail closed on anything else:
+// a missing injection only disables yabai's elevated features, while a scan at stale offsets
+// crashes Dock on every launch.
+static bool select_dock_profile(NSOperatingSystemVersion os_version)
+{
+    if (os_version.majorVersion != 27) return true;
+
+    CFBundleRef bundle = CFBundleGetMainBundle();
+    if (bundle == NULL) return false;
+
+    CFStringRef version = CFBundleGetValueForInfoDictionaryKey(bundle, kCFBundleVersionKey);
+    if (version == NULL || CFGetTypeID(version) != CFStringGetTypeID()) return false;
+
+    char current[64] = {0};
+    if (!CFStringGetCString(version, current, sizeof(current), kCFStringEncodingUTF8)) return false;
+
+    static const char *supported[] = {
+        "2571.0.6.402",   // macOS 27.0 (verified on 27.0.1)
+#ifdef __arm64__
+        "2571.1.32.402",  // macOS 27.2 (dedicated profile, arm64 only)
+#endif
+        NULL
+    };
+
+    for (int i = 0; supported[i] != NULL; ++i) {
+        if (strcmp(current, supported[i]) == 0) {
+#ifdef __arm64__
+            dock_build_272 = (strcmp(current, "2571.1.32.402") == 0);
+#endif
+            return true;
+        }
+    }
+
+    NSLog(@"[yabai-sa] unsupported Dock build %s; refusing to initialize (offsets were not verified for it)", current);
+    return false;
+}
+
+#ifdef __arm64__
+// Resolve the private Swift empty-array singleton through the Dock call site that passes it to
+// the create helper. dlsym() cannot resolve it, so decode the adrp+ldr literal pool slot.
+static void resolve_empty_pid_array_singleton(uint64_t baseaddr, uint64_t site_offset,
+                                              NSOperatingSystemVersion os_version)
+{
+    swift_empty_array_storage = NULL;
+    uint64_t pids_site = hex_find_seq(baseaddr + site_offset, get_pids_array_site_pattern(os_version));
+    if (pids_site == 0) {
+        NSLog(@"[yabai-sa][SPACE] empty pid array call site NOT found");
+        return;
+    }
+
+    uint64_t slot = decode_adrp_ldr_pair((uint32_t *)(pids_site - 8));
+    if (!address_in_data_segment(slot, sizeof(void *))) {
+        NSLog(@"[yabai-sa][SPACE] empty pid array slot 0x%llX is outside __DATA", slot);
+        return;
+    }
+    swift_empty_array_storage = *(void **)slot;
+    NSLog(@"[yabai-sa][SPACE] empty pid array singleton = %p (call site 0x%llX, slot 0x%llX)",
+          swift_empty_array_storage, pids_site, slot);
+}
+#endif
+
+#ifdef __arm64__
+#define DOCK_272_SPACES_SLOT        0x329be0   // __DATA slot: Spaces singleton
+#define DOCK_272_CREATE_HELPER      0x20ce00   // user-space create helper
+#define DOCK_272_PIDS_SCAN_START    0x100000   // scan window that contains the pid-array call site
+#define AARCH64_PACIBSP             0xD503237F
+
+// Dock build 2571.1.32.402 (macOS 27.2) was recompiled: the generic patterns moved, changed,
+// or disappeared. The build gate pins this payload to that exact binary, so these addresses are
+// constants verified against it instead of scan results:
+//   0x329be0 - __DATA slot holding the Spaces singleton (receiver of currentSpaceForDisplay:)
+//   0x20ce00 - user-space create helper (pacibsp prologue, @{type,uuid,pid}, CGSSpaceCreate)
+static void init_instances_dock_272(uint64_t baseaddr, NSOperatingSystemVersion os_version)
+{
+    // The generic path resolves this further down; the 27.2 profile returns before it, so the
+    // bridge must be resolved here or every create aborts with "Swift string bridge unavailable".
+    swift_string_from_objc_fp = dlsym(RTLD_DEFAULT, "$sSS10FoundationE36_unconditionallyBridgeFromObjectiveCySSSo8NSStringCSgFZ");
+    if (swift_string_from_objc_fp == NULL) {
+        NSLog(@"[yabai-sa][SPACE][27.2] WARNING: Swift string bridge unavailable; create disabled");
+    }
+
+    id spaces = nil;
+    if (address_in_data_segment(baseaddr + DOCK_272_SPACES_SLOT, sizeof(id))) {
+        spaces = *(id *)(baseaddr + DOCK_272_SPACES_SLOT);
+    }
+    if (spaces != nil && [spaces respondsToSelector:@selector(spacesForDisplay:)]) {
+        dock_spaces = [spaces retain];
+    } else {
+        NSLog(@"[yabai-sa][SPACE][27.2] spaces singleton check failed (%p); focus disabled", (void *)spaces);
+    }
+
+    if (address_in_segment(baseaddr + DOCK_272_CREATE_HELPER, "__TEXT", sizeof(uint32_t)) &&
+        *(uint32_t *)(baseaddr + DOCK_272_CREATE_HELPER) == AARCH64_PACIBSP) {
+        dock_space_create_fp = baseaddr + DOCK_272_CREATE_HELPER;
+    } else {
+        NSLog(@"[yabai-sa][SPACE][27.2] create helper prologue mismatch; create disabled");
+    }
+
+    dock_cid_getter_fp = 0;   // falls back to SLSMainConnectionID (identical on 27.x)
+    dp_desktop_picture_manager = nil;
+    remove_space_fp = 0;      // the old Dock entry is not identifiable in 27.2
+    move_space_fp = 0;        // DPPM moved to Swift; the old move entry is gone
+    set_front_window_fp = 0;  // the old Dock entry is gone
+    add_space_fp = 0;         // legacy generation: Dock addSpace (<=25)
+    space_create_entry_fp = 0; // legacy generation: space_create_entry (26.x)
+
+    resolve_empty_pid_array_singleton(baseaddr, DOCK_272_PIDS_SCAN_START, os_version);
+
+    NSLog(@"[yabai-sa][SPACE][27.2] profile active: spaces=%p create=%p",
+          (void *)dock_spaces, (void *)dock_space_create_fp);
+}
+#endif
+
 static void init_instances()
 {
     NSOperatingSystemVersion os_version = [[NSProcessInfo processInfo] operatingSystemVersion];
     if (!verify_os_version(os_version)) return;
+    if (!select_dock_profile(os_version)) return;
+
+    scan_limit = text_segment_end();
 
     uint64_t baseaddr = static_base_address() + image_slide();
+
+#ifdef __arm64__
+    if (dock_build_272) {
+        init_instances_dock_272(baseaddr, os_version);
+        return;
+    }
+#endif
 
     uint64_t dock_spaces_addr = hex_find_seq(baseaddr + get_dock_spaces_offset(os_version), get_dock_spaces_pattern(os_version));
     if (dock_spaces_addr == 0) {
@@ -729,23 +913,7 @@ static void init_instances()
         // The empty [pid] array handed to that helper is a private Swift runtime singleton:
         // dlsym() cannot resolve it on 27.0, so decode the literal pool slot the Dock itself
         // loads, using the user-space call site as the anchor.
-        swift_empty_array_storage = NULL;
-        uint64_t pids_site = hex_find_seq(baseaddr + get_pids_array_site_offset(os_version),
-                                          get_pids_array_site_pattern(os_version));
-        if (pids_site != 0) {
-            uint32_t adrp = 0, ldr = 0;
-            memcpy(&adrp, (void *)(pids_site - 8), sizeof(adrp));
-            memcpy(&ldr,  (void *)(pids_site - 4), sizeof(ldr));
-            int64_t imm = (((adrp >> 5) & 0x7ffff) << 2) | ((adrp >> 29) & 3);
-            if (imm & (1 << 20)) imm -= 1 << 21;
-            uint64_t page = ((pids_site - 8) & ~0xfffULL) + ((uint64_t)imm << 12);
-            uint64_t slot = page + (((ldr >> 10) & 0xfff) * 8);
-            swift_empty_array_storage = *(void **)slot;
-            NSLog(@"[yabai-sa][SPACE] empty pid array singleton = %p (call site 0x%llX, slot 0x%llX)",
-                  swift_empty_array_storage, pids_site, slot);
-        } else {
-            NSLog(@"[yabai-sa][SPACE] empty pid array call site NOT found");
-        }
+        resolve_empty_pid_array_singleton(baseaddr, get_pids_array_site_offset(os_version), os_version);
     }
 #endif
 }
@@ -816,6 +984,57 @@ static inline id display_space_for_space_with_id(uint64_t space_id)
 
 static void do_space_move(char *message)
 {
+#ifdef __arm64__
+    // macOS 27.2: Dock's moveSpace / DPPM entry points are gone. SLS exposes the same operation
+    // directly as CGSMoveManagedSpaceToDisplayIndex(cid, space, destination display UUID, flags).
+    if (dock_build_272) {
+        uint64_t source_space_id, dest_space_id, source_prev_space_id;
+        unpack(source_space_id);
+        unpack(dest_space_id);
+        unpack(source_prev_space_id);
+
+        bool focus_dest_space;
+        unpack(focus_dest_space);
+
+        CFStringRef source_display = SLSCopyManagedDisplayForSpace(SLSMainConnectionID(), source_space_id);
+        CFStringRef dest_display = SLSCopyManagedDisplayForSpace(SLSMainConnectionID(), dest_space_id);
+
+        uint64_t source_current = (source_display != NULL) ? SLSManagedDisplayGetCurrentSpace(SLSMainConnectionID(), source_display) : 0;
+
+        if (source_display != NULL && dest_display != NULL && !CFEqual(source_display, dest_display)) {
+            CGSMoveManagedSpaceToDisplayIndex(SLSMainConnectionID(), source_space_id, dest_display, 0);
+
+            CFStringRef moved_display = SLSCopyManagedDisplayForSpace(SLSMainConnectionID(), source_space_id);
+            if (moved_display == NULL || !CFEqual(moved_display, dest_display)) {
+                NSLog(@"[yabai-sa][SPACE][27.2] WARNING: space %llu did not move to display %@",
+                      source_space_id, (__bridge NSString *)dest_display);
+            }
+            if (moved_display) CFRelease(moved_display);
+
+            if (source_current == source_space_id && source_prev_space_id != 0) {
+                SLSManagedDisplaySetCurrentSpace(SLSMainConnectionID(), source_display, source_prev_space_id);
+            }
+            if (focus_dest_space) {
+                SLSManagedDisplaySetCurrentSpace(SLSMainConnectionID(), dest_display, source_space_id);
+            }
+        } else if (source_display != NULL && dest_display != NULL && dest_space_id != 0) {
+            // Same-display reorder: move the acting space after the selector space.
+            CFTypeRef tx = SLSTransactionCreate(SLSMainConnectionID());
+            if (tx != NULL) {
+                SLSTransactionMoveManagedSpaceToDisplayAfterSpace(tx, source_space_id, dest_display, dest_space_id);
+                SLSTransactionCommit(tx, 1);
+                CFRelease(tx);
+                if (focus_dest_space) {
+                    SLSManagedDisplaySetCurrentSpace(SLSMainConnectionID(), dest_display, source_space_id);
+                }
+            }
+        }
+
+        if (source_display) CFRelease(source_display);
+        if (dest_display) CFRelease(dest_display);
+        return;
+    }
+#endif
     if (dock_spaces == nil || dp_desktop_picture_manager == nil || move_space_fp == 0) return;
 
     uint64_t source_space_id, dest_space_id, source_prev_space_id;
@@ -872,6 +1091,24 @@ static void do_space_move(char *message)
 typedef void (*remove_space_call)(id space, id display_space, id dock_spaces, uint64_t space_id1, uint64_t space_id2);
 static void do_space_destroy(char *message)
 {
+#ifdef __arm64__
+    // macOS 27.2: Dock's own remove entry cannot be identified any more (the old pattern now
+    // matches an unrelated function). Destroy the space through the SLS call Dock itself uses.
+    if (dock_build_272) {
+        uint64_t space_id;
+        unpack(space_id);
+        if (!space_id) return;
+        CGSSpaceDestroy(SLSMainConnectionID(), space_id);
+
+        CFStringRef remaining_display = SLSCopyManagedDisplayForSpace(SLSMainConnectionID(), space_id);
+        if (remaining_display != NULL) {
+            NSLog(@"[yabai-sa][SPACE][27.2] WARNING: space %llu still reports display %@ after destroy",
+                  space_id, (__bridge NSString *)remaining_display);
+            CFRelease(remaining_display);
+        }
+        return;
+    }
+#endif
     if (dock_spaces == nil || remove_space_fp == 0) return;
 
     uint64_t space_id;
@@ -1071,9 +1308,20 @@ static void do_space_create(char *message)
             NSLog(@"[yabai-sa][SPACE] dock space-create helper returned space id %llu", new_space_id);
             if (new_space_id != 0) {
                 CFStringRef landed_uuid = SLSCopyManagedDisplayForSpace(SLSMainConnectionID(), new_space_id);
-                if (landed_uuid != NULL && !CFEqual(landed_uuid, display_uuid)) {
-                    NSLog(@"[yabai-sa][SPACE] WARNING: new space %llu landed on display %@ instead of %@",
-                          new_space_id, (__bridge NSString *)landed_uuid, (__bridge NSString *)display_uuid);
+                if (landed_uuid == NULL || !CFEqual(landed_uuid, display_uuid)) {
+                    // The helper places the new space on the active display; put it on the
+                    // requested one, and only drop it when that does not work either.
+                    NSLog(@"[yabai-sa][SPACE] WARNING: new space %llu landed on display %@ (or unknown); moving it to %@",
+                          new_space_id, landed_uuid ? (__bridge NSString *)landed_uuid : @"?", (__bridge NSString *)display_uuid);
+                    CGSMoveManagedSpaceToDisplayIndex(SLSMainConnectionID(), new_space_id, display_uuid, 0);
+
+                    CFStringRef moved_uuid = SLSCopyManagedDisplayForSpace(SLSMainConnectionID(), new_space_id);
+                    if (moved_uuid == NULL || !CFEqual(moved_uuid, display_uuid)) {
+                        NSLog(@"[yabai-sa][SPACE] ERROR: new space %llu could not be moved to %@; destroying it",
+                              new_space_id, (__bridge NSString *)display_uuid);
+                        CGSSpaceDestroy(SLSMainConnectionID(), new_space_id);
+                    }
+                    if (moved_uuid) CFRelease(moved_uuid);
                 }
                 if (landed_uuid) CFRelease(landed_uuid);
                 CFRelease(space_uuid);
@@ -1112,6 +1360,31 @@ static void do_space_create(char *message)
 
 static void do_space_focus(char *message)
 {
+#ifdef __arm64__
+    // macOS 27.2: the Dock selectors used by the generic path (currentSpaceForDisplayUUID:,
+    // displaySpaceForDisplay:) no longer exist. The switch itself only needs SLS, so drive it
+    // directly and skip the Dock-internal model writes.
+    if (dock_build_272) {
+        uint64_t dest_space_id;
+        unpack(dest_space_id);
+        if (!dest_space_id) return;
+
+        CFStringRef dest_display = SLSCopyManagedDisplayForSpace(SLSMainConnectionID(), dest_space_id);
+        if (dest_display == NULL) return;
+        uint64_t current_space_id = SLSManagedDisplayGetCurrentSpace(SLSMainConnectionID(), dest_display);
+        if (current_space_id != dest_space_id) {
+            @autoreleasepool {
+                NSArray *ns_dest_space = @[ @(dest_space_id) ];
+                NSArray *ns_source_space = @[ @(current_space_id) ];
+                SLSShowSpaces(SLSMainConnectionID(), (__bridge CFArrayRef) ns_dest_space);
+                SLSHideSpaces(SLSMainConnectionID(), (__bridge CFArrayRef) ns_source_space);
+                SLSManagedDisplaySetCurrentSpace(SLSMainConnectionID(), dest_display, dest_space_id);
+            }
+        }
+        CFRelease(dest_display);
+        return;
+    }
+#endif
     if (dock_spaces == nil) return;
 
     uint64_t dest_space_id;
@@ -1491,9 +1764,17 @@ static void do_handshake(int sockfd)
     if (dp_desktop_picture_manager != nil) attrib |= OSAX_ATTRIB_DPPM;
     // Space creation moved from the Dock addSpace function (<=25), to the Swift
     // space_create_entry (26.x), to WindowManager.framework (27+).
-    if (add_space_fp || space_create_entry_fp || dock_space_create_fp) attrib |= OSAX_ATTRIB_ADD_SPACE;
-    if (remove_space_fp)                   attrib |= OSAX_ATTRIB_REM_SPACE;
-    if (move_space_fp)                     attrib |= OSAX_ATTRIB_MOV_SPACE;
+    bool create_ready = (add_space_fp != 0 || space_create_entry_fp != 0);
+#ifdef __arm64__
+    create_ready = create_ready || (dock_space_create_fp != 0 &&
+                                    swift_string_from_objc_fp != NULL &&
+                                    swift_empty_array_storage != NULL);
+#else
+    create_ready = create_ready || (dock_space_create_fp != 0);
+#endif
+    if (create_ready)                      attrib |= OSAX_ATTRIB_ADD_SPACE;
+    if (remove_space_fp || dock_build_272)     attrib |= OSAX_ATTRIB_REM_SPACE;
+    if (move_space_fp || dock_build_272)       attrib |= OSAX_ATTRIB_MOV_SPACE;
     if (set_front_window_fp)               attrib |= OSAX_ATTRIB_SET_WINDOW;
     if (animation_time_addr)               attrib |= OSAX_ATTRIB_ANIM_TIME;
 
