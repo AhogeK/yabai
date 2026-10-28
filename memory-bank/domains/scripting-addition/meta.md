@@ -1,7 +1,7 @@
 # meta — Scripting Addition（SA）
 
-> **系统基线**：macOS 27.0 (26A428) · Dock 2571.0.6.402 · WindowManager 462.0.8
-> **最后验证**：2026-09-15 · **状态**：环境基线
+> **系统基线**：macOS 27.2 (26B123) · Dock 2571.1.32.402 · WindowManager 462.1.41.404
+> **最后验证**：2026-10-28 · **状态**：环境基线
 > **来源**：`src/sa.m` / `src/osax/payload.m` 源码核对
 
 ## 边界
@@ -26,7 +26,7 @@ yabai 注入 Dock.app 的脚本附加组件与其客户端协议：
 
 | 术语 | 含义 |
 |---|---|
-| **属性位（attrib）** | 握手时 SA 上报的能力掩码；daemon 要求 `OSAX_ATTRIB_ALL` 齐全，缺位 = 触发重装流程 |
+| **属性位（attrib）** | 握手时 SA 上报的能力掩码；daemon 只要求必需子集 `OSAX_ATTRIB_REQUIRED`（ADD\|REM\|MOV），可选位（DOCK_SPACES/DPPM/SET_WINDOW/ANIM_TIME）缺失不判负 |
 | **版本门** | `verify_os_version()`：不覆盖的主版本 → `init_instances()` 直接 return（SA 全静默失效） |
 | **代际** | 同一能力在多代 macOS 上的不同实现（daemon 接口不变，payload 内部分流） |
 | **SIP 友好模式** | 未关闭 SIP 时的能力降级路径（部分空间/窗口操作走 SkyLight 而非 SA） |

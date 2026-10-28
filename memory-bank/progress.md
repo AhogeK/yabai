@@ -1,12 +1,18 @@
 # Progress - yabai
 
-## Current Phase: 空间身份修复（7.2.6）✅ (2026-10-23)
+## Current Phase: macOS 27.2 支持（7.2.13）✅ (2026-10-28)
 
-- 已部署并闭环：清理 `com.apple.spaces` 后注销/重启，模型重建为每显示器 1 个空间（1/6/7），壁纸恢复正常
+- 27.2 Dock 重编译导致的崩溃循环已修复；create/focus/destroy/move/排序真机验证通过；桌面编号恢复全局（skhdrc 已回滚）
 
 ---
 
 ## Phase History
+### Phase 42: macOS 27.2 支持（崩溃修复 + 全功能适配）✅ (2026-10-28)
+- 根因：固定扫描窗口越过新 Dock 的 `__TEXT` 末尾，读进保护页；Dock 启动即崩（崩溃循环）
+- 恢复：移除 SA + 重启；`launchctl` 服务名是 `com.apple.Dock.agent`
+- 修复：`hex_find_seq` 钳制到段末尾；`verify_dock_build()` 未知 Dock 构建拒绝初始化（7.2.7 / OSAX 2.1.35）
+- 27.2 适配：7.2.8 create/focus、7.2.9 destroy（CGSSpaceDestroy）、7.2.10 move/排序（CGSMoveManagedSpaceToDisplayIndex + SLSTransaction*）、7.2.11 修复 profile 跳过的 Swift 桥解析、7.2.13 修复 __DATA_CONST 段校验误判并**运行验证 create/focus/move/排序/destroy 全部通过**；7.2.12 上线前审计 + 双轴代码审查（段范围校验、fail-closed、握手属性、落点/焦点、autoreleasepool、文档）；桌面编号恢复全局（skhdrc 已回滚）；跨 space window focus 不影响（daemon 走 _SLPS+AX）
+
 
 ### Phase 41: 空间身份修复 —— 主屏失背景根因 ✅ (2026-10-23)
 - 根因：macOS 27 `space --create` 把显示器 UUID 当新空间身份；系统 “+” 用每次新生成的 UUID（对照实测：id 33 唯一 vs id 26 = 显示器 UUID）
@@ -77,8 +83,8 @@
 
 | 文件 | 行数 | 限制 | 状态 |
 |------|------|------|------|
-| activeContext.md | 30 | 150 | ✅ |
-| progress.md | 84 | 100 | ✅ |
+| activeContext.md | 43 | 150 | ✅ |
+| progress.md | 90 | 100 | ✅ |
 | systemPatterns.md | 63 | 80 | ✅ |
 | techContext.md | 57 | 80 | ✅ |
 | projectbrief.md | 22 | 50 | ✅ |

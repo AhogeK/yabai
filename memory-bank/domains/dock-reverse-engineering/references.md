@@ -1,8 +1,8 @@
 # references — 偏移 / pattern / 符号 / 单例事实表
 
-> **系统基线**：macOS 27.0 (26A428) · Dock 2571.0.6.402 · WindowManager 462.0.8
-> **最后验证**：2026-09-15 · **状态**：已验证
-> **来源**：27.0 偏移在 binary 上静态唯一命中（`docs/…macos27…` 附录 B 脚本）+ 用户实测空间功能恢复
+> **系统基线**：macOS 27.2 (26B123) · Dock 2571.1.32.402 · WindowManager 462.1.41.404
+> **最后验证**：2026-10-28 · **状态**：已验证（27.2 真机日志 + `dyld_info`）
+> **来源**：27.2 地址由真机 helper 调用日志 + 段范围校验确认
 
 > 不含判断，只查表。**pattern 字符串本体以 `src/osax/arm64_payload.m` 为准**，本表记录"它命中了哪里、解出什么"。
 
@@ -24,6 +24,17 @@
 | Spaces 单例全局 | 0x488028 | 0x488028 | 0x100409bb0 |
 | DPPM 单例全局 | 0x4880d0 | 0x4880d0 | 0x100409c50 |
 
+## macOS 27.2（Dock 2571.1.32.402，构建锁定）
+
+|项目|值|说明|
+|---|---|---|
+|适配方式|固定地址 + 构建白名单|旧 pattern 在 27.2 **全部 0 命中**；不做盲目扫描|
+|Spaces 单例槽|`0x329be0`|`__DATA`，加载后指向 Spaces 单例|
+|create helper|`0x20ce00`|pacibsp prologue + `CGSSpaceCreate` 调用点；三验通过|
+|空数组单例槽|`0x2ef0d8`|`__DATA_CONST` GOT；`dyld_info -fixups` = `bind libswiftCore/__swiftEmptyArrayStorage`|
+|启用条件|`dock_build_272`|仅 arm64；Dock 构建串精确匹配|
+
+
 ## 单例全局语义画像（macOS 27.0）
 
 | 全局地址 | 接收方法（节选） | 判定 |
@@ -33,15 +44,19 @@
 | `0x100409c28` | `dockConnection` `darkDock` `dragWindow` `setMainMillis:` | Dock 设置对象（yabai 不用） |
 | `0x100409ba0` | `_handleEvent:location:flags:` `_getCornerActions:` | 热区控制器（yabai 不用） |
 
-## 稳定 pattern（跨版本未变）
+## 稳定 pattern（26/27，27.2 已全部失效）
 
 ```
 dock_spaces (26/27) : ?8 ?? ?? ?? 08 ?? ?? 91 00 01 40 F9 E2 03 13 AA ?? ?? ?? 94 ?? ?? ?? ?? 08
 dppm        (26/27) : ?? ?? 00 ?? 08 ?? ?? 91 00 01 40 F9 E2 03 16 AA E3 03 19 AA ?? ?? ?? 94
 fix_animation (26/27): 00 10 6A 1E A8 ?? ?? D1 ?? 01 ?? F8
-set_front_window (27): ?? ?? ?? 34 7F 23 03 D5 FF C3 01 D1 F6 57 04 A9 F4 4F 05 A9 FD 7B 06 A9 FD 83 01 91dock_space_create (27): 7F 23 03 D5 E6 03 1E AA ?? ?? ?? ?? FE 03 06 AA FD 7B 06 A9 FD 83 01 91 F6 03 05 AA F8 03 04 AA F9 03 03 AA F4 03 02 AA F3 03 01 AA F5 03 00 AA
-dock_cid_getter   (27): 7F 23 03 D5 FF 03 01 D1 F4 4F 02 A9 FD 7B 03 A9 FD C3 00 91 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? F3 0A 00 90 73 D2 05 91pids_array_site   (27): 01 00 80 52 02 00 80 52 E3 03 15 AA E4 03 16 AA ?? ?? ?? 94
+set_front_window (27): ?? ?? ?? 34 7F 23 03 D5 FF C3 01 D1 F6 57 04 A9 F4 4F 05 A9 FD 7B 06 A9 FD 83 01 91
+dock_space_create (27): 7F 23 03 D5 E6 03 1E AA ?? ?? ?? ?? FE 03 06 AA FD 7B 06 A9 FD 83 01 91 F6 03 05 AA F8 03 04 AA F9 03 03 AA F4 03 02 AA F3 03 01 AA F5 03 00 AA
+dock_cid_getter (27): 7F 23 03 D5 FF 03 01 D1 F4 4F 02 A9 FD 7B 03 A9 FD C3 00 91 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? F3 0A 00 90 73 D2 05 91
+pids_array_site (27): 01 00 80 52 02 00 80 52 E3 03 15 AA E4 03 16 AA ?? ?? ?? 94
 ```
+
+macOS 27.2 重编译后以上 pattern 均 0 命中；`remove_space` 旧 pattern 虽命中 `0x12dbcc`，但该地址**不是** removeSpace（伪命中，见 `scripting-addition/practices.md`）。
 
 ## WindowManager.framework（macOS 27，导出符号，dlsym 名称去掉前导下划线）
 

@@ -1,8 +1,8 @@
 # practices — 空间操作具体做法与踩坑
 
-> **系统基线**：macOS 27.0 (26A428) · Dock 2571.0.6.402 · WindowManager 462.0.8
-> **最后验证**：2026-09-15 · **状态**：已验证
-> **来源**：三代调用样例取自实际提交代码；沙箱结论来自 26.x 实测
+> **系统基线**：macOS 27.2 (26B123) · Dock 2571.1.32.402 · WindowManager 462.1.41.404
+> **最后验证**：2026-10-28 · **状态**：已验证
+> **来源**：三代调用样例取自实际提交代码；27.2 move/排序/destroy 真机实测
 
 ## 1. 三代创建的调用样例
 
@@ -71,3 +71,6 @@ payload 侧关键行：`call space_create_entry(display_id=…)` / `synchronousl
 1. 不要用 display index 跨 API 传显示器（用 UUID）
 2. 不要在 DPPM 未通知的情况下认为"空间创建完成"（壁纸会错位）
 3. 不要把模型回写失败当成整体失败而回滚 SLS 切换
+### 27.2 move/排序已在真机验证（2026-10-28）
+
+`CGSMoveManagedSpaceToDisplayIndex(cid, sid, displayUUID, 0)` 与 `SLSTransactionMoveManagedSpaceToDisplayAfterSpace(tx, sid, displayUUID, afterSid)` + `SLSTransactionCommit(tx, 1)` 在 Dock 2571.1.32.402 上实测有效：跨屏移动后 `query --spaces` 的 display 变化正确，排序后顺序按预期重排；`CGSSpaceDestroy` 删除空桌面后空间数正确递减。

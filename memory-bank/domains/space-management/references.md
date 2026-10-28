@@ -1,17 +1,17 @@
 # references — 空间 API 与实现对照表
 
-> **系统基线**：macOS 27.0 (26A428) · Dock 2571.0.6.402 · WindowManager 462.0.8
-> **最后验证**：2026-09-15 · **状态**：已验证
-> **来源**：SkyLight/DPPM API 与源码调用点逐项核对
+> **系统基线**：macOS 27.2 (26B123) · Dock 2571.1.32.402 · WindowManager 462.1.41.404
+> **最后验证**：2026-10-28 · **状态**：已验证（真机 create/focus/move/排序/destroy）
+> **来源**：`src/osax/payload.m` 调用形态 + 27.2 运行日志
 
 ## daemon → SA 能力对照
 
-| daemon 调用 | opcode | payload 处理 | 依赖 |
+| daemon 调用 | opcode | payload 处理 | 依赖（27.2） |
 |---|---|---|---|
-| `scripting_addition_create_space(sid)` | `SPACE_CREATE` (0x03) | `do_space_create` | 创建入口（按代际）+ `dock_spaces`(G2) |
-| `scripting_addition_destroy_space(sid)` | `SPACE_DESTROY` (0x04) | `do_space_destroy` | `remove_space_fp` + `dock_spaces` |
-| `scripting_addition_focus_space(sid)` | `SPACE_FOCUS` (0x02) | `do_space_focus` | `dock_spaces` + SLS |
-| `scripting_addition_move_space_*` | `SPACE_MOVE` (0x05) | `do_space_move` | `move_space_fp` + DPPM |
+| `scripting_addition_create_space(sid)` | `SPACE_CREATE` (0x03) | `do_space_create` | Dock helper `0x20ce00` + Swift String 桥 + 空数组槽 `0x2ef0d8` |
+| `scripting_addition_destroy_space(sid)` | `SPACE_DESTROY` (0x04) | `do_space_destroy` | `CGSSpaceDestroy(cid, sid)` |
+| `scripting_addition_focus_space(sid)` | `SPACE_FOCUS` (0x02) | `do_space_focus` | Spaces 单例槽 `0x329be0` + `SLSManagedDisplaySetCurrentSpace` |
+| `scripting_addition_move_space_*` | `SPACE_MOVE` (0x05) | `do_space_move` | 跨屏 `CGSMoveManagedSpaceToDisplayIndex`；排序 `SLSTransaction*` |
 
 ## SkyLight / CoreGraphics API
 
@@ -25,7 +25,9 @@
 | `SLSGetSpaceManagementMode` | SIP 相关能力判定 |
 | `CGDisplayCreateUUIDFromDisplayID(did)` | display id → UUID（沙箱安全） |
 | `CGGetActiveDisplayList` / `CGMainDisplayID` | 本机显示器枚举 |
-| （导入符号）`CGSMoveManagedSpaceToDisplayIndex` | 空间移动到显示器索引（Dock 内实现使用） |
+| `CGSSpaceDestroy(cid, sid)` | 删除托管空间（27.2 Dock 内调用形态已核对） |
+| `CGSMoveManagedSpaceToDisplayIndex(cid, sid, displayUUID, flags)` | 跨显示器移动空间 |
+| `SLSTransactionCreate(cid)` / `SLSTransactionMoveManagedSpaceToDisplayAfterSpace(tx, sid, uuid, afterSid)` / `SLSTransactionCommit(tx, 1)` | 同显示器排序（事务） |
 
 ## Dock 模型对象与方法（26/27 通用）
 
@@ -63,7 +65,7 @@
 | `SLSCopyManagedDisplaySpaces` | 每个元素 = 一个 display；`Display Identifier`、`Spaces[]`、`Current Space` |
 | space 的 `id64` / `ManagedSpaceID` | yabai 用的 sid（实测两者一致，如 id=50/58） |
 | space 的 `type` | 0 = user（27.0.1 上新建空间仍为 0） |
-| space 的 `uuid` | **27.0.1 起等于其所在显示器的 UUID**（display 1 的两个空间都是 `37D8832A…`） |
+| space 的 `uuid` | 7.2.6 前 yabai 创建的空间**误用显示器 UUID**（同屏多空间身份重复，开机塌缩）；7.2.6 起每次传新 UUID，系统 “+” 亦如此。27.2 真机验证 id 唯一 |
 
 yabai 的两个序号函数（`src/space_manager.c`）：`space_manager_mission_control_index(sid)` → 全局序号；`space_manager_mission_control_space(N)` → 反查。**两者都跨显示器累加**。
 
@@ -73,7 +75,8 @@ yabai 的两个序号函数（`src/space_manager.c`）：`space_manager_mission_
 |---|---|---|---|---|
 | ≤ 15 | Dock `addSpace` | Dock `removeSpace` | Dock `moveSpace` | pattern 按版本分段 |
 | 26.0–26.6 | Dock Swift `space_create_entry`（26.0 `0x1f07d8`；26.6 `0x1f07d4`） | Dock `removeSpace` | Dock `moveSpace` | `dock_spaces` 双路定位 |
-| **27.0** | **Dock 内部 helper `0x2bb62c`（G3′，已实现）**；`WindowManager.framework` 的 `synchronouslyRequestCreateManagedSpace`（G3，断言门不可用） | Dock `removeSpace`（pattern 命中 0x18b9a0） | Dock `moveSpace`（0x18c554） | 创建不再依赖 Dock 偏移 |
+| **27.0** | **Dock 内部 helper `0x2bb62c`（G3′）**；`WindowManager.framework` 的 `synchronouslyRequestCreateManagedSpace`（G3，断言门不可用） | Dock `removeSpace`（0x18b9a0） | Dock `moveSpace`（0x18c554） | 27.0 实测可用；27.2 重编译后失效 |
+| **27.2** | **Dock helper `0x20ce00`（构建锁定 + 段校验）** | `CGSSpaceDestroy` | `CGSMoveManagedSpaceToDisplayIndex` / `SLSTransaction*` | 旧 pattern 全 0 命中；`remove_space` 伪命中 0x12dbcc |
 
 ## 全屏还原状态（daemon 内部，7.2.x）
 

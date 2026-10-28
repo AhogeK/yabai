@@ -1,8 +1,8 @@
 # scenarios — 触发场景 → 判断 → 动作
 
-> **系统基线**：macOS 27.0 (26A428) · Dock 2571.0.6.402 · WindowManager 462.0.8
-> **最后验证**：2026-09-15 · **状态**：含推论
-> **来源**：S1 排查顺序已验证；S4（ivar 改名）与 S6 为推论，待实测
+> **系统基线**：macOS 27.2 (26B123) · Dock 2571.1.32.402 · WindowManager 462.1.41.404
+> **最后验证**：2026-10-28 · **状态**：已验证（S1/S8/S10 + 27.2 全功能实测）
+> **来源**：S1 排查顺序与 27.2 行为实测；S4（ivar 改名）与 S6 为推论，待实测
 
 ## S1. `yabai -m space --create` 无效果
 
@@ -35,14 +35,13 @@
 
 **动作**：确认 `moveSpace:toDisplay:displayUUID:` 被调用（DPPM 需重新绑定），并核对 `CGSMoveManagedSpaceToDisplayIndex` 的 display index 语义 `[推论]`（index 不是 display UUID）。
 
-## S8. 按编号操作桌面时打到了别的显示器（macOS 27.0.1+）
+## S8. 按编号操作桌面时打到了别的显示器（历史：macOS 27.0.1；27.2 已恢复全局编号）
 
 **判断**：多显示器 + 按数字选择器（`space --focus N` / `window --space N`），发现生效的是另一台显示器上的桌面。
 
-**动作**：
-1. 记住 yabai 的 N 是**全局序**（display 1 全部 → display 2 全部 → …），而 Mission Control 的编号是**每显示器独立**；
-2. 需要"当前显示器的第 N 个"时用：`yabai -m query --spaces --display | jq -r '.[N-1].index'` 取到 yabai 的 index 再用；
-3. 校验方法：`yabai -m query --spaces | jq '[.[] | {index, display}]'`（对照 `yabai -m query --displays`）。
+**27.0.1 历史**：Mission Control 曾按每显示器独立编号，需要用 `yabai -m query --spaces --display | jq -r '.[N-1].index'` 取当前显示器的 index。
+
+**现状（27.2 / 26B123，2026-10-28 用户实测）**：Mission Control 恢复**全局编号**（三台显示器连续 Desktop 1/2/3），直接 `space --focus N` 即对应看到的 Desktop N。绑定层已回滚为直接使用 N（`~/.config/skhd/skhdrc`，备份 `skhdrc.bak-20261028-global-index`）。
 
 ## S9. 开机后主屏没有桌面 / Mission Control 连 Spaces Bar 与 `+` 都没有（macOS 27.0.1）
 

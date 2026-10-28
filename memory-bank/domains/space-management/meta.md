@@ -1,7 +1,7 @@
 # meta — 空间管理（space）
 
-> **系统基线**：macOS 27.0 (26A428) · Dock 2571.0.6.402 · WindowManager 462.0.8
-> **最后验证**：2026-09-15 · **状态**：环境基线
+> **系统基线**：macOS 27.2 (26B123) · Dock 2571.1.32.402 · WindowManager 462.1.41.404
+> **最后验证**：2026-10-28 · **状态**：环境基线
 > **来源**：`src/space_manager.c` / `src/osax/payload.m` 源码核对
 
 ## 边界
@@ -39,7 +39,7 @@ yabai 的"桌面/空间"生命周期与切换行为：
 
 | 项目 | 值 |
 |---|---|
-| 当前系统 | macOS 27.0 (26A428)，Dock 2571.0.6.402 |
+| 当前系统 | macOS 27.2 (26B123)，Dock 2571.1.32.402 |
 | 空间数据源 | `SLSCopyManagedDisplaySpaces` / `SLSManagedDisplayGetCurrentSpace` / `SLSCopyManagedDisplayForSpace` |
 | 切换动作 | `SLSShowSpaces` / `SLSHideSpaces` / `SLSManagedDisplaySetCurrentSpace` |
 | 多显示器 UUID | `CGDisplayCreateUUIDFromDisplayID`（IOKit 在 Dock 沙箱内不可用） |

@@ -32,10 +32,10 @@
 
 | 项目 | 当前值 |
 |---|---|
-| 目标系统 | macOS 27.0.1 (26A434)；Dock 2571.0.6.402；WindowManager.framework 462.0.8 |
-| 空间创建 | **G3′（唯一可用）**：Dock 内 Swift helper `0x2bb62c` → `CGSSpaceCreate`；第 4 参数是**新空间身份**，必须传新 UUID |
-| 空间销毁/移动 | 仍走 Dock 内 `removeSpace` / `moveSpace`（pattern 命中） |
-| Spaces / DPPM 单例 | 由 pattern 在运行时解码（27.0：`0x100409bb0` / `0x100409c50`） |
+| 目标系统 | macOS 27.2 (26B123)；Dock 2571.1.32.402；WindowManager.framework 462.1.41.404 |
+| 空间创建 | 27.2：Dock helper `0x20ce00`；27.0/27.1：`0x2bb62c`；第 4 参数是**新空间身份**，必须传新 UUID；按 Dock 构建白名单 fail-closed |
+| 空间销毁/移动 | 27.2：`CGSSpaceDestroy` / `CGSMoveManagedSpaceToDisplayIndex` / `SLSTransaction*`；旧 Dock removeSpace/moveSpace 在 27.2 不存在 |
+| Spaces / DPPM 单例 | 27.2：Spaces 槽 `0x329be0`；DPPM 已转 Swift，未使用；27.0：`0x100409bb0` / `0x100409c50` |
 
 - 偏移/pattern/符号全表与历史版本矩阵 → `domains/dock-reverse-engineering/references.md`
 - 版本适配排查流程 → `domains/dock-reverse-engineering/scenarios.md`

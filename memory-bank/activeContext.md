@@ -1,5 +1,18 @@
 # Active Context - yabai
 
+## ✅ macOS 27.2 支持（7.2.7–7.2.13，2026-10-28，已真机验证）
+
+- 系统 27.2（26B123）；Dock 2571.0.6.402 → **2571.1.32.402**，旧特征码大面积失配
+- 事故：扫描窗口越过新 `__TEXT`（`0x2b0000 + 0x1286a0 > 0x3b9b80`）读进保护页 → Dock 崩溃循环；恢复：停 yabai → 移走 osax → `launchctl kickstart gui/$UID/com.apple.Dock.agent` → 重启
+- 安全护栏：扫描一律钳制到 `__TEXT` 末尾，text 尾未知或 `scan_limit==0` 时 fail-closed；27.x 按 Dock 构建白名单（`2571.0.6.402` / `2571.1.32.402`），未知构建拒绝初始化
+- 27.2 profile（arm64，构建锁定）：Spaces 单例槽 **0x329be0**；create helper **0x20ce00**；空数组单例槽 **0x2ef0d8**（`__DATA_CONST` GOT，`dyld_info -fixups` 证实绑定 `__swiftEmptyArrayStorage`）
+- 能力实现：create（随机 UUID 身份）/ focus（纯 SLS）/ destroy（`CGSSpaceDestroy`）/ 跨屏 move（`CGSMoveManagedSpaceToDisplayIndex`）/ 同屏排序（`SLSTransaction*`）；跨 space window focus 无需 SA（daemon 走 `_SLPS+AX`）
+- 握手：`OSAX_ATTRIB_REQUIRED` = ADD|REM|MOV；27.2 如实上报 SLS 实现的 REM/MOV；ADD 需 helper + Swift 桥 + 空数组单例齐全
+- 真机验证：create 66/68/70/77/78；focus 1→66→1；move 77 display1↔2；排序 78 移到 index3；destroy 后 count 回 6、id 唯一
+- 伪命中教训：`remove_space` 旧 pattern 在 27.2 命中 0x12dbcc **并非 removeSpace**（prologue 只保存 4 个参数）；pattern 命中 ≠ 函数身份
+- 桌面编号：27.2 恢复**全局编号**；`~/.config/skhd/skhdrc` 已回滚为直接使用 N（备份 `skhdrc.bak-20261028-global-index`）
+- 计划：`docs/plans/2026-10-28-macos-27.2-support.md`（completed）
+
 ## ✅ 7.2.6 空间身份修复 —— 主屏失背景已闭环（2026-10-23）
 
 - **现象**：开机后主屏无壁纸、Mission Control 只见 1 个桌面（无桌面方块）；建/删桌面后反复复发；窗口上下窜动
@@ -14,7 +27,7 @@
 
 ## 当前工作焦点
 
-无进行中任务。7.2.6 已部署并验证；后续按日常使用观察是否复发。
+无进行中任务。macOS 27.2 支持（7.2.13）已完成并真机验证；后续按日常使用观察。
 
 ## 已知设计限制（不处理）
 

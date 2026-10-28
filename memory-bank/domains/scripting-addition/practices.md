@@ -1,8 +1,8 @@
 # practices — SA 具体做法与踩坑
 
-> **系统基线**：macOS 27.0 (26A428) · Dock 2571.0.6.402 · WindowManager 462.0.8
-> **最后验证**：2026-09-15 · **状态**：已验证
-> **来源**：命令与 asm 宏约束本机跑通；日志前缀与 `payload.m` 源码核对
+> **系统基线**：macOS 27.2 (26B123) · Dock 2571.1.32.402 · WindowManager 462.1.41.404
+> **最后验证**：2026-10-28 · **状态**：已验证
+> **来源**：命令与 asm 宏约束本机跑通；27.2 崩溃/恢复/握手实测 + `payload.m` 源码核对
 
 ## 1. 日志排查（第一手证据）
 
@@ -96,3 +96,24 @@ DEVELOPER_DIR=/Library/Developer/CommandLineTools make BUILD_PATH=/tmp/<topic>/b
 ### 空间身份：Swift String 参数就是新空间的 uuid（2026-10-23 更正）
 
 create helper 的第 4 个参数（Swift String）原样进入 `CGSSpaceCreate` 的 `@{type, uuid, pid}`，**它就是新空间的身份**。绝不能传显示器 UUID：同显示器上所有由 yabai 创建的空间会共享一个身份，WindowManager 按身份持久化并在开机恢复，重复身份全部塌缩到同一 id（`managed space order: [6,6,…]`）→ Mission Control 只剩 1 个桌面、无壁纸。系统 “+” 每次生成新 UUID（实测 id 33 = `442D311F…`）；payload 用 `CFUUIDCreate` + `CFUUIDCreateString` 生成后传入，显示器 UUID 只用于落点校验。
+
+### 扫描边界与构建闸门（2026-10-28 事故）
+
+- `hex_find_seq` 的固定窗口（0x1286a0）必须再钳制到宿主 `__TEXT` 末尾（`getsegbyname("__TEXT")` 的 `vmaddr + vmsize + slide`）。OS 更新后特征码失配时，扫描会读进段末尾保护页，Dock 直接 SIGBUS（本次：`0x2b0000 + 0x1286a0 > 0x3b9b80`）。
+- macOS 27.x 必须做 Dock 构建闸门（`CFBundleVersion` 白名单）；未知构建拒绝初始化并打日志——**宁可不注入，也不能崩 Dock**。
+
+### pattern 命中 ≠ 函数身份（2026-10-28 27.2 教训）
+
+Dock 重编译后，`remove_space` 的旧特征码在 27.2 仍命中 0x12dbcc，但反汇编显示该函数只保存 4 个参数、逻辑与 removeSpace 不符——这是**伪命中**。启用任何 pattern 命中前，必须核对 prologue 的参数保存、关键调用（如 `CGSSpaceCreate`）与选择器；否则会在调用时把错误地址当函数指针用，直接崩 Dock。
+
+### macOS 27.2 的 move/排序走 SLS（2026-10-28）
+
+Dock 重编译后 `moveSpace` / DPPM 入口消失；SLS 仍有底层布局 API：跨显示器 `CGSMoveManagedSpaceToDisplayIndex(cid, sid, displayUUID CFString, flags)`；同显示器排序用事务 `SLSTransactionCreate(cid)` → `SLSTransactionMoveManagedSpaceToDisplayAfterSpace(tx, sid, displayUUID, afterSid)` → `SLSTransactionCommit(tx, 1)` → `CFRelease(tx)`。参数形态由 Dock/WM 调用点反汇编确认（x2 为桥接后的 NSString）。
+
+### 握手属性位要与实际能力一致（2026-10-28 审计）
+
+payload 只按函数指针是否解析来上报能力位（ADD/REM/MOV/SET_WINDOW/ANIM_TIME/DPPM）。macOS 27.2 上 destroy/move 改由 SLS 实现、对应 Dock 指针为 0，若照旧上报就会让 daemon 判定“payload 不支持该系统版本”。规则：**能力位按实现上报**（27.2 用 SLS 实现也要置 REM/MOV）；daemon 侧只校验真正必需的子集 `OSAX_ATTRIB_REQUIRED` = **ADD_SPACE | REM_SPACE | MOV_SPACE**，可选位（DOCK_SPACES/DPPM/SET_WINDOW/ANIM_TIME）缺失不应判负。
+
+### 固定地址必须做段范围校验（2026-10-28 审查）
+
+构建锁定的 27.2 profile 使用固定地址（`__DATA` 单例槽、`__TEXT` helper、literal pool 槽）。除 Dock 构建串白名单外，读取前必须用 `getsegbyname` 校验目标落在允许段内（`__DATA` / `__DATA_CONST` / `__AUTH_CONST` / `__TEXT`）；`image_slide()` 失败或 text 尾未知时扫描/读取一律 fail-closed。版本串相同但二进制变体的场景下，这是最后一道防线。

@@ -1,8 +1,8 @@
 # principles — 空间管理的不变量
 
-> **系统基线**：macOS 27.0.1 (26A434) · Dock 2571.0.6.402 · WindowManager 462.0.8
-> **最后验证**：2026-09-15 · **状态**：含推论
-> **来源**：§1 代际表已验证（26/27 实测）；§4 ivar 改名与 §5 前置门为源码推论，未在 27 实测
+> **系统基线**：macOS 27.2 (26B123) · Dock 2571.1.32.402 · WindowManager 462.1.41.404
+> **最后验证**：2026-10-28 · **状态**：已验证（27.2 真机 create/focus/move/排序/destroy）
+> **来源**：代际表 26/27 实测；§4 ivar 改名与 §5 前置门为源码推论，未在 27.2 实测
 
 ## 1. 空间创建有三代实现，daemon 接口恒定
 
@@ -15,13 +15,14 @@
 
 对新系统一律**先判断当前属于哪一代**，再决定改偏移还是换 API；不要默认"还是老机制"。
 
-## 1.5 yabai 的 index 是「全局序」，与 macOS 的「按显示器编号」不是一回事
+## 1.5 yabai 的 index 是「全局序」—— 27.2 起与 Mission Control 重新一致
 
-`query --spaces` 的 `index`、以及 `space --focus N` / `window --space N` 里的 N，都是 **跨显示器顺序累加**（`space_manager_mission_control_index` / `mission_control_space` 用一个走到头的 `desktop_cnt`）。macOS 27.0.1 起 Mission Control 的 Desktop 编号是**每显示器独立**的 → 在 display 2 及以后，**yabai 的 N ≠ 你看到的 Desktop N**（实测：yabai index=3 落在 display 2 的第 1 个桌面）。
+`query --spaces` 的 `index`、以及 `space --focus N` / `window --space N` 里的 N，都是跨显示器顺序累加（`space_manager_mission_control_index` 用一个走到头的 `desktop_cnt`）。
 
-- 读取 index 再回填（`query --spaces` → `--focus/--destroy <index>`）**自洽**，不受影响；
-- 硬编码 1..9 的绑定会打错显示器 → 改成按当前显示器取第 N 个：`yabai -m query --spaces --display | jq -r '.[N-1].index'` 再喂给命令；
-- **不要**为了对齐 UI 去改 yabai 的 index 语义（上游定义 + 破坏既有脚本）。
+- **macOS 27.2（26B123，2026-10-28 用户实测）**：Mission Control 已恢复**全局编号**（三台显示器连续 Desktop 1/2/3）→ 直接 `space --focus N` 与看到的 Desktop N 一致；
+- 27.0.1 曾改为每显示器独立编号（历史见 `scenarios.md` S8）；当时“按当前显示器取第 N 个”的写法已**不再需要**；
+- 绑定层已回滚：`~/.config/skhd/skhdrc` 直接使用 N（备份 `skhdrc.bak-20261028-global-index`）；
+- **不要**改 yabai 的 index 语义（上游定义 + 破坏既有脚本）；系统若再次改变编号，先实测再调整绑定。
 
 ## 2. display UUID 用于绑定，空间身份必须唯一
 

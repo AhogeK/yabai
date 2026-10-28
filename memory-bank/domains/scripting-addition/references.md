@@ -1,8 +1,8 @@
 # references — SA 协议与路径事实表
 
-> **系统基线**：macOS 27.0 (26A428) · Dock 2571.0.6.402 · WindowManager 462.0.8
-> **最后验证**：2026-09-15 · **状态**：已验证
-> **来源**：与 `src/osax/common.h` 逐项核对（属性位/opcode/版本号）
+> **系统基线**：macOS 27.2 (26B123) · Dock 2571.1.32.402 · WindowManager 462.1.41.404
+> **最后验证**：2026-10-28 · **状态**：已验证
+> **来源**：与 `src/osax/common.h` 逐项核对（属性位/opcode/版本号）+ 27.2 真机日志
 
 ## 属性位（`src/osax/common.h`）
 
@@ -33,7 +33,7 @@
 
 | 项目 | 值 |
 |---|---|
-| `OSAX_VERSION` | 2.1.32（macOS 27 支持） |
+| `OSAX_VERSION` | 2.1.41（macOS 27.2 支持，7.2.13） |
 | socket 路径 | `/tmp/yabai-sa_%s.socket`（`SA_SOCKET_PATH_FMT`） |
 | socket 缓冲 | `SA_SOCKET_BUFF_LEN` = 0x1000 |
 | 安装目录 | `/Library/ScriptingAdditions/yabai.osax` |
@@ -48,10 +48,14 @@
 | `yabai --uninstall-sa` | 卸载 SA |
 | `yabai --restart-service` | 重启 yabai 服务（涉及 Accessibility 授权，**用户执行**） |
 
-## 属性位与版本（macOS 27）
+## 属性位与版本（macOS 27.2，2026-10-28）
 
 | 项 | 值 | 说明 |
 |---|---|---|
-| `OSAX_ATTRIB_ADD_SPACE` | 0x04 | macOS 27 上由 `dock_space_create_fp`（Dock 内部 helper）满足；G3 的 `wm_create_space_fp` 仍在但**断言门不可用**，仅作回退 |
-| `OSAX_VERSION` | 2.1.38 | 7.1.34；payload 任一次改动都要 bump（R15） |
-| 27 新增解析项 | `dock_cid_getter_fp` / `dock_space_create_fp` / `swift_empty_array_storage` | 前两者 pattern 定位，第三者 literal pool 解码 |
+| `OSAX_ATTRIB_REQUIRED` | `ADD_SPACE \| REM_SPACE \| MOV_SPACE` | daemon 握手只校验必需子集；可选位缺失不判负 |
+| `OSAX_ATTRIB_ADD_SPACE` | 0x04 | 需 Dock create helper + Swift String 桥 + `__swiftEmptyArrayStorage` 三者齐全才上报 |
+| `OSAX_ATTRIB_REM_SPACE` | 0x08 | 27.2 由 `CGSSpaceDestroy` 实现，仍上报 |
+| `OSAX_ATTRIB_MOV_SPACE` | 0x10 | 27.2 由 `CGSMoveManagedSpaceToDisplayIndex` / `SLSTransaction*` 实现，仍上报 |
+| `OSAX_VERSION` | **2.1.41** | 7.2.13；payload 任一次改动都要 bump（R15） |
+| 27.2 解析项 | Spaces 槽 `0x329be0` / create helper `0x20ce00` / 空数组槽 `0x2ef0d8` | 构建锁定 + 段范围校验；27.2 上旧 pattern 全部 0 命中 |
+| Dock 构建白名单 | `2571.0.6.402`（27.0/27.1）、`2571.1.32.402`（27.2） | 未知构建拒绝初始化（fail-closed） |
