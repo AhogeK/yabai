@@ -12,6 +12,7 @@
 - 恢复：移除 SA + 重启；`launchctl` 服务名是 `com.apple.Dock.agent`
 - 修复：`hex_find_seq` 钳制到段末尾；`verify_dock_build()` 未知 Dock 构建拒绝初始化（7.2.7 / OSAX 2.1.35）
 - 27.2 适配：7.2.8 create/focus、7.2.9 destroy（CGSSpaceDestroy）、7.2.10 move/排序（CGSMoveManagedSpaceToDisplayIndex + SLSTransaction*）、7.2.11 修复 profile 跳过的 Swift 桥解析、7.2.13 修复 __DATA_CONST 段校验误判并**运行验证 create/focus/move/排序/destroy 全部通过**；7.2.12 上线前审计 + 双轴代码审查（段范围校验、fail-closed、握手属性、落点/焦点、autoreleasepool、文档）；桌面编号恢复全局（skhdrc 已回滚）；跨 space window focus 不影响（daemon 走 _SLPS+AX）
+- 发布：ai-base `5a53ab8` · dev `ff62fb3` · master `ac1aaa4`；三支已推送，代码内容一致，dev/master 无 AI 文件
 
 
 ### Phase 41: 空间身份修复 —— 主屏失背景根因 ✅ (2026-10-23)

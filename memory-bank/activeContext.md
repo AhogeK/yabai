@@ -12,6 +12,7 @@
 - 伪命中教训：`remove_space` 旧 pattern 在 27.2 命中 0x12dbcc **并非 removeSpace**（prologue 只保存 4 个参数）；pattern 命中 ≠ 函数身份
 - 桌面编号：27.2 恢复**全局编号**；`~/.config/skhd/skhdrc` 已回滚为直接使用 N（备份 `skhdrc.bak-20261028-global-index`）
 - 计划：`docs/plans/2026-10-28-macos-27.2-support.md`（completed）
+- 发布：功能 `a0427be` / 版本 `6cd952d` / 手册 `5a53ab8`（ai-base）；dev `4aef480`/`c6bcce7`/`ff62fb3`；master `c35bbe0`/`0eb0cef`/`ac1aaa4`；三支已推送且与 origin 一致
 
 ## ✅ 7.2.6 空间身份修复 —— 主屏失背景已闭环（2026-10-23）
 
