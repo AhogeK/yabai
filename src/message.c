@@ -2092,6 +2092,17 @@ static void handle_domain_window(FILE *rsp, struct token domain, char *message)
             }
 
             if (acting_window) {
+                //
+                // NOTE: Focusing a window on a hidden space makes macOS animate the
+                // implicit space switch. Switch the space through the scripting
+                // addition first (the same path as `space --focus`) so the landing
+                // is immediate; the native switch remains the fallback.
+                //
+                uint64_t sid = window_space(acting_window->id);
+                if (sid && !space_is_visible(sid) && !window_check_flag(acting_window, WINDOW_MINIMIZE)) {
+                    space_manager_focus_space(sid);
+                }
+
                 window_manager_focus_window_with_raise(&acting_window->application->psn, acting_window->id, acting_window->ref);
             } else {
                 daemon_fail(rsp, "could not locate the window to act on!\n");
