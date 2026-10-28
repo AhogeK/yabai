@@ -923,6 +923,183 @@ enum space_op_error space_manager_move_space_to_display(struct space_manager *sm
 }
 
 #pragma clang diagnostic push
+static int32_t space_manager_fixed1616(double value)
+{
+    int32_t fixed = (int32_t)(value * 65536.0);
+    if (fixed == 0 && value != 0.0) return value > 0.0 ? 1 : -1;
+    return fixed;
+}
+
+static void space_manager_write_u16le(uint8_t **cursor, uint16_t value)
+{
+    (*cursor)[0] = (uint8_t)(value & 0xFF);
+    (*cursor)[1] = (uint8_t)((value >> 8) & 0xFF);
+    *cursor += 2;
+}
+
+static void space_manager_write_u32le(uint8_t **cursor, uint32_t value)
+{
+    (*cursor)[0] = (uint8_t)(value & 0xFF);
+    (*cursor)[1] = (uint8_t)((value >> 8) & 0xFF);
+    (*cursor)[2] = (uint8_t)((value >> 16) & 0xFF);
+    (*cursor)[3] = (uint8_t)((value >> 24) & 0xFF);
+    *cursor += 4;
+}
+
+static void space_manager_write_u64le(uint8_t **cursor, uint64_t value)
+{
+    for (int i = 0; i < 8; ++i) {
+        (*cursor)[i] = (uint8_t)((value >> (i * 8)) & 0xFF);
+    }
+    *cursor += 8;
+}
+
+static void space_manager_write_i32le(uint8_t **cursor, int32_t value)
+{
+    space_manager_write_u32le(cursor, (uint32_t)value);
+}
+
+static double space_manager_posted_swipe_sign(void)
+{
+    bool natural = true;
+    CFPropertyListRef value = CFPreferencesCopyAppValue(
+        CFSTR("com.apple.swipescrolldirection"), kCFPreferencesAnyApplication);
+
+    if (value) {
+        if (CFGetTypeID(value) == CFBooleanGetTypeID()) {
+            natural = CFBooleanGetValue((CFBooleanRef)value);
+        }
+        CFRelease(value);
+    }
+
+    return natural ? 1.0 : -1.0;
+}
+
+//
+// macOS 27 validates synthetic Dock swipes against a serialized IOHID queue payload
+// (CGEvent field 4205) and expects each DockControl event to be paired with a
+// companion gesture event. Without both, the Dock silently ignores the swipe.
+// The payload layout is from noswoosh / iss; keep the 26 path untouched.
+//
+static CGEventRef space_manager_augment_dock_event(CGEventRef event)
+{
+    CFDataRef serialized = CGEventCreateData(NULL, event);
+    if (!serialized) return NULL;
+
+    const uint8_t *bytes = CFDataGetBytePtr(serialized);
+    CFIndex length = CFDataGetLength(serialized);
+    if (!bytes || length < 4 || bytes[0] != 0 || bytes[1] != 0 || bytes[2] != 0 || bytes[3] != 2) {
+        CFRelease(serialized);
+        return NULL;
+    }
+
+    int64_t phase = CGEventGetIntegerValueField(event, (CGEventField)132);
+    int64_t motion = CGEventGetIntegerValueField(event, (CGEventField)123);
+    int64_t mask = CGEventGetIntegerValueField(event, (CGEventField)115);
+    double progress = CGEventGetDoubleValueField(event, (CGEventField)124);
+    double position_x = CGEventGetDoubleValueField(event, (CGEventField)125);
+    double position_y = CGEventGetDoubleValueField(event, (CGEventField)126);
+    double velocity_x = CGEventGetDoubleValueField(event, (CGEventField)129);
+    double velocity_y = CGEventGetDoubleValueField(event, (CGEventField)130);
+    bool include_velocity = velocity_x != 0.0 || velocity_y != 0.0 || phase == 4;
+
+    uint8_t payload[128];
+    uint8_t *cursor = payload;
+    uint64_t timestamp = CGEventGetTimestamp(event);
+    if (timestamp == 0) timestamp = mach_absolute_time();
+
+    space_manager_write_u64le(&cursor, timestamp);
+    space_manager_write_u64le(&cursor, 0);
+    space_manager_write_u32le(&cursor, 0);
+    space_manager_write_u32le(&cursor, 0);
+    space_manager_write_u32le(&cursor, include_velocity ? 2 : 1);
+
+    space_manager_write_u32le(&cursor, 40);
+    space_manager_write_u32le(&cursor, 23);
+    space_manager_write_u32le(&cursor, (uint32_t)((phase & 0xFF) << 24));
+    *cursor++ = 0; *cursor++ = 0; *cursor++ = 0; *cursor++ = 0;
+    space_manager_write_i32le(&cursor, space_manager_fixed1616(position_x));
+    space_manager_write_i32le(&cursor, space_manager_fixed1616(position_y));
+    space_manager_write_i32le(&cursor, 0);
+    space_manager_write_u32le(&cursor, (uint32_t)mask);
+    space_manager_write_u16le(&cursor, (uint16_t)motion);
+    space_manager_write_u16le(&cursor, 3);
+    space_manager_write_i32le(&cursor, space_manager_fixed1616(progress));
+
+    if (include_velocity) {
+        space_manager_write_u32le(&cursor, 28);
+        space_manager_write_u32le(&cursor, 9);
+        space_manager_write_u32le(&cursor, 0);
+        *cursor++ = 1; *cursor++ = 0; *cursor++ = 0; *cursor++ = 0;
+        space_manager_write_i32le(&cursor, space_manager_fixed1616(velocity_x));
+        space_manager_write_i32le(&cursor, space_manager_fixed1616(velocity_y));
+        space_manager_write_i32le(&cursor, 0);
+    }
+
+    size_t payload_length = (size_t)(cursor - payload);
+    CFMutableDataRef data = CFDataCreateMutable(NULL, length + 4 + payload_length);
+    if (!data) {
+        CFRelease(serialized);
+        return NULL;
+    }
+
+    CFDataAppendBytes(data, bytes, length);
+    uint8_t header[4] = {
+        (uint8_t)((payload_length >> 8) & 0xFF),
+        (uint8_t)(payload_length & 0xFF),
+        (uint8_t)((4205 >> 8) & 0xFF),
+        (uint8_t)(4205 & 0xFF),
+    };
+    CFDataAppendBytes(data, header, 4);
+    CFDataAppendBytes(data, payload, payload_length);
+
+    CGEventRef augmented = CGEventCreateFromData(NULL, data);
+    CFRelease(data);
+    CFRelease(serialized);
+    return augmented;
+}
+
+static bool space_manager_post_macos27_swipe(int count, float sign)
+{
+    static const int phases[] = { 1, 2, 4 };
+    double posted_sign = space_manager_posted_swipe_sign();
+
+    for (int i = 0; i < count; ++i) {
+        for (size_t j = 0; j < sizeof(phases) / sizeof(phases[0]); ++j) {
+            CGEventRef event = CGEventCreate(NULL);
+            if (!event) return false;
+
+            CGEventSetIntegerValueField(event, (CGEventField)55, 30);
+            CGEventSetIntegerValueField(event, (CGEventField)110, 23);
+            CGEventSetIntegerValueField(event, (CGEventField)132, phases[j]);
+            CGEventSetIntegerValueField(event, (CGEventField)123, 1);
+            CGEventSetDoubleValueField(event, (CGEventField)124, -1e-4 * (double)sign * posted_sign);
+            CGEventSetDoubleValueField(event, (CGEventField)125, 0.1);
+            if (phases[j] == 4) {
+                CGEventSetDoubleValueField(event, (CGEventField)129, -9999.0 * (double)sign * posted_sign);
+            }
+
+            CGEventRef augmented = space_manager_augment_dock_event(event);
+            CFRelease(event);
+            if (!augmented) return false;
+
+            CGEventRef companion = CGEventCreate(NULL);
+            if (!companion) {
+                CFRelease(augmented);
+                return false;
+            }
+
+            CGEventSetIntegerValueField(companion, (CGEventField)55, 29);
+            CGEventPost(kCGSessionEventTap, augmented);
+            CGEventPost(kCGSessionEventTap, companion);
+            CFRelease(companion);
+            CFRelease(augmented);
+        }
+    }
+
+    return true;
+}
+
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 bool space_manager_focus_space_using_gesture(uint32_t new_did, uint64_t new_sid)
 {
@@ -952,23 +1129,28 @@ bool space_manager_focus_space_using_gesture(uint32_t new_did, uint64_t new_sid)
     // Technique first observed in practice, and reverse-engineered from, BetterTouchTool.
     //
 
-    CGEventRef event_dock_control = CGEventCreate(NULL);
-    if (!event_dock_control) return false;
-
     float sign = (new_index - cur_index) > 0 ? 1.0 : -1.0;
-    CGEventSetIntegerValueField(event_dock_control, /* kCGSEventTypeField            */  55, /* kCGSEventDockControl       */ 30);
-    CGEventSetIntegerValueField(event_dock_control, /* kCGEventGestureHIDType        */ 110, /* kIOHIDEventTypeDockSwipe   */ 23);
-    CGEventSetIntegerValueField(event_dock_control, /* kCGEventGestureSwipeMotion    */ 123, /* kCGGestureMotionHorizontal */  1);
-    CGEventSetDoubleValueField(event_dock_control,  /* kCGEventGestureSwipeProgress  */ 124, sign);
-    CGEventSetDoubleValueField(event_dock_control,  /* kCGEventGestureSwipeVelocityX */ 129, sign * 9999.0);
 
-    for (int i = 0; i < count; ++i) {
-        CGEventSetIntegerValueField(event_dock_control, /* kCGEventGesturePhase */ 132, /* kCGSGesturePhaseBegan */ 1);
-        CGEventPost(kCGSessionEventTap, event_dock_control);
-        CGEventSetIntegerValueField(event_dock_control, /* kCGEventGesturePhase */ 132, /* kCGSGesturePhaseEnded */ 4);
-        CGEventPost(kCGSessionEventTap, event_dock_control);
+    if (workspace_is_macos_27_or_later()) {
+        if (!space_manager_post_macos27_swipe(count, sign)) return false;
+    } else {
+        CGEventRef event_dock_control = CGEventCreate(NULL);
+        if (!event_dock_control) return false;
+
+        CGEventSetIntegerValueField(event_dock_control, /* kCGSEventTypeField            */  55, /* kCGSEventDockControl       */ 30);
+        CGEventSetIntegerValueField(event_dock_control, /* kCGEventGestureHIDType        */ 110, /* kIOHIDEventTypeDockSwipe   */ 23);
+        CGEventSetIntegerValueField(event_dock_control, /* kCGEventGestureSwipeMotion    */ 123, /* kCGGestureMotionHorizontal */  1);
+        CGEventSetDoubleValueField(event_dock_control,  /* kCGEventGestureSwipeProgress  */ 124, sign);
+        CGEventSetDoubleValueField(event_dock_control,  /* kCGEventGestureSwipeVelocityX */ 129, sign * 9999.0);
+
+        for (int i = 0; i < count; ++i) {
+            CGEventSetIntegerValueField(event_dock_control, /* kCGEventGesturePhase */ 132, /* kCGSGesturePhaseBegan */ 1);
+            CGEventPost(kCGSessionEventTap, event_dock_control);
+            CGEventSetIntegerValueField(event_dock_control, /* kCGEventGesturePhase */ 132, /* kCGSGesturePhaseEnded */ 4);
+            CGEventPost(kCGSessionEventTap, event_dock_control);
+        }
+        CFRelease(event_dock_control);
     }
-    CFRelease(event_dock_control);
 
     if (focus_display) {
         display_manager_set_active_display_id(new_did);
@@ -995,7 +1177,20 @@ enum space_op_error space_manager_focus_space(uint64_t sid)
     bool focus_display = cur_did != new_did;
 
     bool is_animating = display_manager_display_is_animating(new_did);
-    if (is_animating) return SPACE_OP_ERROR_DISPLAY_IS_ANIMATING;
+    if (is_animating && workspace_is_macos_27_or_later()) {
+        //
+        // A rapid second switch can arrive while the previous transition is
+        // still running. Wait for the display to settle instead of switching
+        // mid-transition, which can land on an empty space.
+        //
+        for (int i = 0; i < 25 && display_manager_display_is_animating(new_did); ++i) {
+            usleep(20000);
+        }
+        is_animating = display_manager_display_is_animating(new_did);
+    }
+    if (is_animating) {
+        return SPACE_OP_ERROR_DISPLAY_IS_ANIMATING;
+    }
 
     if (scripting_addition_focus_space(sid)) {
         if (focus_display) {
@@ -1209,6 +1404,12 @@ void space_manager_begin(struct space_manager *sm)
     sm->window_insertion_point = INSERT_FOCUSED;
     sm->window_zoom_persist = true;
     sm->labels = NULL;
+    //
+    // Keep the bypass off by default: it is only needed when the Dock performs
+    // the space switch (workspaces-auto-swoosh). If Dock window-order follow is
+    // disabled, yabai's own space focus owns the switch, and a second synthetic
+    // gesture makes the two applications bounce back and forth.
+    //
     sm->skip_window_focus_animation = false;
     table_init(&sm->view, 23, hash_view, compare_view);
 
