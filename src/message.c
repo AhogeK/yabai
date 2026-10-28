@@ -2101,6 +2101,13 @@ static void handle_domain_window(FILE *rsp, struct token domain, char *message)
                 uint64_t sid = window_space(acting_window->id);
                 if (sid && !space_is_visible(sid) && !window_check_flag(acting_window, WINDOW_MINIMIZE)) {
                     space_manager_focus_space(sid);
+                    for (int i = 0; i < 25 && !space_is_visible(sid); ++i) {
+                        usleep(20000);
+                    }
+                    if (!space_is_visible(sid)) {
+                        daemon_fail(rsp, "destination space is still animating.\n");
+                        return;
+                    }
                 }
 
                 window_manager_focus_window_with_raise(&acting_window->application->psn, acting_window->id, acting_window->ref);
