@@ -1,3 +1,33 @@
+## [7.2.13] - 2026-10-28
+### Fixed
+- The 27.2 profile rejected the Swift empty-array literal pool slot because it lives in `__DATA_CONST`, not `__DATA`, so the create helper was never called. Data checks now accept `__DATA`, `__DATA_CONST` and `__AUTH_CONST`
+
+## [7.2.12] - 2026-10-28
+### Fixed
+- macOS 27.2 payload advertised no destroy/move capability because those Dock entry points are gone, so the daemon reported an unsupported payload. The payload now advertises the SLS-backed implementations, and the handshake accepts the space capabilities the daemon actually drives instead of requiring the optional wallpaper/window-front/animation bits
+- A space created on the wrong display is now moved to the requested display, and only destroyed when that move fails as well
+- Moving a space across displays restores the source display's current space, and a same-display reorder focuses the moved space when requested
+
+## [7.2.11] - 2026-10-28
+### Fixed
+- macOS 27.2 profile never resolved the Swift `String(NSString)` bridge, so every `space --create` aborted with "Swift string bridge unavailable". The bridge is now resolved inside the 27.2 profile itself
+
+## [7.2.10] - 2026-10-28
+### Added
+- `space --move` / `space --display` on macOS 27.2 use the SLS layout APIs directly: a cross-display move calls `CGSMoveManagedSpaceToDisplayIndex`, and a same-display reorder creates an `SLSTransaction` and calls `SLSTransactionMoveManagedSpaceToDisplayAfterSpace` before committing. This replaces the Dock-internal move entry points that no longer exist in the recompiled Dock
+
+## [7.2.9] - 2026-10-28
+### Added
+- `space --destroy` on macOS 27.2 calls `CGSSpaceDestroy` directly. The Dock entry used before could not be identified in the recompiled Dock (the old pattern matched an unrelated function), so the SLS call Dock itself uses is now the destroy path on that build
+
+## [7.2.8] - 2026-10-28
+### Added
+- Initial macOS 27.2 (Dock 2571.1.32.402) support behind the build gate: a dedicated profile pins the Spaces singleton and the space-create helper to this exact Dock build, and `space --focus` switches views through SLS only because the Dock selectors it used were removed. `space --create` and `space --focus` work again; destroy, move and cross-space window focus stay disabled until their 27.2 entry points are verified
+
+## [7.2.7] - 2026-10-28
+### Fixed
+- Dock crash loop after the macOS 27.2 update. Pattern scans used a fixed window that ran past the Dock `__TEXT` segment into its guard page, so Dock crashed on every launch and the desktop, Mission Control and app switching were unavailable. Scans are now clamped to the host executable's text segment, and a Dock build gate makes the payload refuse to initialize on builds whose offsets were not verified - an unknown build now disables the scripting addition instead of crashing Dock
+
 ## [7.2.6] - 2026-10-23
 ### Fixed
 - `space --create` on macOS 27 passed the display UUID to the Dock create helper, which stores that string as the new space's identity. Every space created by yabai on one display therefore shared a single identity; WindowManager persists spaces by identity and its login restore mapped all duplicates onto one space (`managed space order: [6, 6, 6, ...]`), leaving Mission Control with one desktop and no wallpaper. The helper now receives a freshly generated UUID, the same way the system's own "+" button creates a space; the display UUID is still used to verify where the new space landed
