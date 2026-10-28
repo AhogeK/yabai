@@ -10,7 +10,7 @@
 ### Phase 43: window focus fast landing（7.2.14）⏳ 已提交，待运行验证 (2026-10-29)
 - 事实：`window --focus` 只做 SLPS/AX 聚焦；27.2 对窗口激活引发的隐式 space 切换播放横移动画，与脚本无关
 - 修复：目标 space 不可见且窗口未最小化时，命令内部先 `space_manager_focus_space(sid)`（SA/SLS 直切），再 SLPS 聚焦；失败回退原生
-- 提交：ai-base 功能 `9e7bcb8` / 版本 `04d4d8c`；dev/master 逐级 pick 后回填
+- 提交：ai-base 功能 `9e7bcb8` / 版本 `04d4d8c`；dev `b0c71a8`/`24c3376`；master `27ca10e`/`d1aa085`
 - 验证：编译 0 警告 + tests 2/2；30fps 录屏因用户输入干扰不作结论；待安装 7.2.14 后确认
 - 文档：`docs/plans/2026-10-29-window-focus-fast-landing.md`（in-progress）
 
