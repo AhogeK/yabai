@@ -1,3 +1,19 @@
+## [7.2.18] - 2026-10-29
+### Fixed
+- The macOS 27 focus-animation bypass could fight yabai's own space focus when Dock window-order follow (`workspaces-auto-swoosh`) is disabled, making two applications bounce back and forth. The bypass is no longer enabled by default; `skip_window_focus_animation on` still enables it when the Dock performs the switch
+
+## [7.2.17] - 2026-10-29
+### Fixed
+- Rapid repeated focus switches could run while the previous space transition was still animating, landing on an empty space with a black screen and a different application. On macOS 27 space focus now waits for the display to settle, and window focus aborts if the destination space never becomes visible
+
+## [7.2.16] - 2026-10-29
+### Fixed
+- On macOS 27 the activation transition can start before the focus command reaches the display, and the animating-display guard made the focus fail nondeterministically, so Dock clicks and app switches sometimes animated. Space focus now attempts the scripting-addition switch during that transition on 27 and only refuses on older systems
+
+## [7.2.15] - 2026-10-29
+### Fixed
+- macOS 27 ignores synthetic Dock swipe events that lack the serialized IOHID payload and its companion gesture event, so window and space focus fell back to the animated native switch. The gesture path now posts the macOS 27 event shape (payload layout from noswoosh/iss) and the bypass is enabled by default on 27+; the pre-27 path is unchanged
+
 ## [7.2.14] - 2026-10-29
 ### Fixed
 - Focusing a window on a hidden space animated the implicit macOS space switch, so same-application window cycling across desktops felt like a desktop slide. `window --focus` now switches the target space through the scripting addition first (the same path as `space --focus`) and falls back to the native switch only if that fails
