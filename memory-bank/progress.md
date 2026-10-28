@@ -1,12 +1,19 @@
 # Progress - yabai
 
-## Current Phase: macOS 27.2 支持（7.2.13）✅ (2026-10-28)
+## Current Phase: window focus fast landing（7.2.14）⏳ 已提交，待运行验证 (2026-10-29)
 
-- 27.2 Dock 重编译导致的崩溃循环已修复；create/focus/destroy/move/排序真机验证通过；桌面编号恢复全局（skhdrc 已回滚）
+- `window --focus` 跨隐藏 space 时先走 `space_manager_focus_space`（SA/SLS），去掉 macOS 原生横移动画；编译 0 警告、tests 2/2；已提交，待用户安装/重启目视验证
 
 ---
 
 ## Phase History
+### Phase 43: window focus fast landing（7.2.14）⏳ 已提交，待运行验证 (2026-10-29)
+- 事实：`window --focus` 只做 SLPS/AX 聚焦；27.2 对窗口激活引发的隐式 space 切换播放横移动画，与脚本无关
+- 修复：目标 space 不可见且窗口未最小化时，命令内部先 `space_manager_focus_space(sid)`（SA/SLS 直切），再 SLPS 聚焦；失败回退原生
+- 提交：ai-base 功能 `9e7bcb8` / 版本 `04d4d8c`；dev/master 逐级 pick 后回填
+- 验证：编译 0 警告 + tests 2/2；30fps 录屏因用户输入干扰不作结论；待安装 7.2.14 后确认
+- 文档：`docs/plans/2026-10-29-window-focus-fast-landing.md`（in-progress）
+
 ### Phase 42: macOS 27.2 支持（崩溃修复 + 全功能适配）✅ (2026-10-28)
 - 根因：固定扫描窗口越过新 Dock 的 `__TEXT` 末尾，读进保护页；Dock 启动即崩（崩溃循环）
 - 恢复：移除 SA + 重启；`launchctl` 服务名是 `com.apple.Dock.agent`
@@ -84,8 +91,8 @@
 
 | 文件 | 行数 | 限制 | 状态 |
 |------|------|------|------|
-| activeContext.md | 43 | 150 | ✅ |
-| progress.md | 90 | 100 | ✅ |
+| activeContext.md | 55 | 150 | ✅ |
+| progress.md | 98 | 100 | ✅ |
 | systemPatterns.md | 63 | 80 | ✅ |
 | techContext.md | 57 | 80 | ✅ |
 | projectbrief.md | 22 | 50 | ✅ |

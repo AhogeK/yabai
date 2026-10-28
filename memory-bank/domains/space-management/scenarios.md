@@ -137,3 +137,14 @@ EVENT_HANDLER_SPACE_CHANGED: 50                    ← 它的效果
 > 我曾把它改成「立刻聚焦 + 0.3 秒后补一次」，被用户否掉并回退（2026-10-10）；动作三行保持与原版逐字一致。
 
 **手感对齐证据**（影子 yabai，各 10 次）：最初 132 ms / 现在 130 ms；逐行结构差异仅 jq 过滤器与 `-n "$target_space"` 判断。**被否掉的三处改动**：① `sleep 0.15` + "空间刚变就跳过" → 卡顿 + 漏跳；② 拆两次 `jq` → +9 ms（中位 140 vs 131）；③ 目标窗口"优先 has-focus" → 跳向的窗口与最初不同（实测不可见窗口 has-focus 基本为 false，收益存疑）。备份仍在同目录 `window_focused_event_script.sh.bak`。
+
+## S11. 同 APP 跨 desktop 跳转出现桌面横移动画（macOS 27.2）
+
+**判断**：`window --focus` 的目标窗口在隐藏 space，且命令路径上没有先做 `space --focus` → macOS 自行完成隐式空间切换并播放横移动画。
+
+**动作**：
+1. 确认调用方是否只发 `window --focus`（`same_app_window_forward.sh` 即是）；对照 `space --focus` 路径是否仍然即时落点；
+2. 7.2.14 起 daemon 在 `window --focus` 内部先调用 `space_manager_focus_space(sid)`（目标 space 不可见且窗口未最小化时），再走 SLPS 聚焦；
+3. 若仍有动画：检查 `display_manager_display_is_animating` 是否拒绝切换（连续快速切换会以原生切换兜底），并确认 SA 已加载（`log show --predicate 'process == "Dock"' | grep yabai-sa`）。
+
+**不要**依赖 `skip_window_focus_animation on` 的合成手势来"加速"：它底层是 Dock 横滑手势，不能保证 27.2 上无横移；本次修复不依赖该设置。

@@ -6,13 +6,24 @@
 - 事故：扫描窗口越过新 `__TEXT`（`0x2b0000 + 0x1286a0 > 0x3b9b80`）读进保护页 → Dock 崩溃循环；恢复：停 yabai → 移走 osax → `launchctl kickstart gui/$UID/com.apple.Dock.agent` → 重启
 - 安全护栏：扫描一律钳制到 `__TEXT` 末尾，text 尾未知或 `scan_limit==0` 时 fail-closed；27.x 按 Dock 构建白名单（`2571.0.6.402` / `2571.1.32.402`），未知构建拒绝初始化
 - 27.2 profile（arm64，构建锁定）：Spaces 单例槽 **0x329be0**；create helper **0x20ce00**；空数组单例槽 **0x2ef0d8**（`__DATA_CONST` GOT，`dyld_info -fixups` 证实绑定 `__swiftEmptyArrayStorage`）
-- 能力实现：create（随机 UUID 身份）/ focus（纯 SLS）/ destroy（`CGSSpaceDestroy`）/ 跨屏 move（`CGSMoveManagedSpaceToDisplayIndex`）/ 同屏排序（`SLSTransaction*`）；跨 space window focus 无需 SA（daemon 走 `_SLPS+AX`）
+- 能力实现：create（随机 UUID 身份）/ focus（纯 SLS）/ destroy（`CGSSpaceDestroy`）/ 跨屏 move（`CGSMoveManagedSpaceToDisplayIndex`）/ 同屏排序（`SLSTransaction*`）；跨 space window focus 的空间切换走 SA（7.2.14），窗口聚焦仍走 `_SLPS+AX`
 - 握手：`OSAX_ATTRIB_REQUIRED` = ADD|REM|MOV；27.2 如实上报 SLS 实现的 REM/MOV；ADD 需 helper + Swift 桥 + 空数组单例齐全
 - 真机验证：create 66/68/70/77/78；focus 1→66→1；move 77 display1↔2；排序 78 移到 index3；destroy 后 count 回 6、id 唯一
 - 伪命中教训：`remove_space` 旧 pattern 在 27.2 命中 0x12dbcc **并非 removeSpace**（prologue 只保存 4 个参数）；pattern 命中 ≠ 函数身份
 - 桌面编号：27.2 恢复**全局编号**；`~/.config/skhd/skhdrc` 已回滚为直接使用 N（备份 `skhdrc.bak-20261028-global-index`）
 - 计划：`docs/plans/2026-10-28-macos-27.2-support.md`（completed）
 - 发布：功能 `a0427be` / 版本 `6cd952d` / 手册 `5a53ab8`（ai-base）；dev `4aef480`/`c6bcce7`/`ff62fb3`；master `c35bbe0`/`0eb0cef`/`ac1aaa4`；三支已推送且与 origin 一致
+
+## 🧭 7.2.14 同 APP 跨 desktop 焦点落点（2026-10-29，待目视验证）
+
+- 事实：`opt+shift+tab` → `same_app_window_forward.sh` 只发 `window --focus`；daemon 该命令只做 SLPS/AX 聚焦，27.2 对“窗口激活引发的隐式 space 切换”播放横移动画（不是脚本问题）
+- 对照：`cmd+tab` → `window_focused_event_script.sh` 先 `space --focus`（SA/SLS 直切）再 `window --focus` → 立即落点
+- 修复：`message.c` 的 `window --focus` 在目标 space 不可见且窗口未最小化时，先 `space_manager_focus_space(sid)`（与 `space --focus` 同一路径），再聚焦窗口；SA 失败/MC/动画中回退原生切换
+- 版本：7.2.14（OSAX 2.1.41 不变）；编译 0 警告、`make -C tests` 2/2
+- 用户反馈（2026-10-29）：window focus 本身就是触发点，不允许把修复解释成"脚本只发 window --focus"的脚本层问题
+- 现场核对：当前安装/运行仍是 **7.2.13**（daemon 18:47 启动），7.2.14 未部署；30fps 录屏在 7.2.13 的同屏/跨屏同 APP 场景未捕获横移（测试期间检测到用户鼠标操作，环境非空闲，结论不作最终判定）
+- 状态：**7.2.14 已提交，待用户安装/重启后目视确认；若仍动画，下一步用上游 `skip_window_focus_animation` 合成手势路径对照（注意跨屏会移动光标）**
+- 提交：功能 `9e7bcb8` / 版本 `04d4d8c`（ai-base）；dev/master 待逐级 pick 后回填
 
 ## ✅ 7.2.6 空间身份修复 —— 主屏失背景已闭环（2026-10-23）
 

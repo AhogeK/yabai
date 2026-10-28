@@ -362,6 +362,15 @@ git checkout ai-base
 - **pattern 命中 ≠ 函数身份**：核对 prologue 保存的参数个数、调用形态与相邻符号，禁止只凭"命中且唯一"启用
 - 新能力上线前逐项真机验证（每个 opcode 单独跑），不得用"创建成功"推断 move/destroy/排序
 
+### R22: 行为取证与用户环境隔离（Enforced）
+
+**核心原则：先分层，再取证；用户环境不是测试夹具。**
+
+- 聚焦/切空间类问题必须区分三层：显式命令（日志有 `DAEMON_MESSAGE`）、系统隐式行为（只有 `SPACE_CHANGED`/`WINDOW_FOCUSED`）、用户输入（`MOUSE_*`/`APPLICATION_FRONT_SWITCHED`）；不得把系统行为归因给脚本或反之
+- 录屏/计时/焦点实验必须在**空闲会话**进行；出现用户鼠标/键盘事件即作废该次样本，测试后恢复焦点、空间与配置
+- 不把 `skip_window_focus_animation` 之类的运行期配置当持久设置：daemon 重启即复位；结论必须写明当前 `yabai -m config` 实测值
+- 行为类修复未在用户重启后的真实环境验证前，状态只能标“待验证”，不得写“已修复”
+
 ## Execution Flow
 
 ```
