@@ -22,6 +22,7 @@
 - 7.2.18：`skip_window_focus_animation` 恢复默认 off，避免手势与脚本 `space --focus` 互相触发（两个 APP 来回闪）
 - 实测：直接 `space --focus` 无横移；最终配置下用户确认无问题；仍需长期观察
 - 计划：`docs/plans/2026-10-29-macos27-iohid-gesture.md`（completed）
+- 发布：功能 `c9c1ff2` / 版本 `5fdb079`（ai-base）；dev `cff32ad`/`f11c765`；master `1cce764`/`ffb5952`；AI 记录 `f4fa857`
 
 ## ✅ 7.2.14 同 APP 跨 desktop 焦点落点（已完成，含在 7.2.18）
 

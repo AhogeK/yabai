@@ -10,6 +10,7 @@
 - 根因：27 动画来自 `workspaces-auto-swoosh` 窗口排序跟随（Dock 日志 `ordered on non-visible space`）
 - 7.2.15：27 IOHID payload + companion；7.2.17：等待 display 稳定、目标 space 可见后才聚焦，超时中止
 - 7.2.18：skip 默认 off；最终配置 auto-swoosh=false + skip off，用户验证无问题
+- 发布：ai-base 功能 `c9c1ff2` / 版本 `5fdb079`；dev `cff32ad`/`f11c765`；master `1cce764`/`ffb5952`
 
 ### Phase 43: window focus fast landing（7.2.14）✅ 已包含在 7.2.18 (2026-10-29)
 - 事实：`window --focus` 只做 SLPS/AX 聚焦；27.2 对窗口激活引发的隐式 space 切换播放横移动画，与脚本无关
@@ -92,8 +93,8 @@
 
 | 文件 | 行数 | 限制 | 状态 |
 |------|------|------|------|
-| activeContext.md | 64 | 150 | ✅ |
-| progress.md | 99 | 100 | ✅ |
+| activeContext.md | 65 | 150 | ✅ |
+| progress.md | 100 | 100 | ✅ |
 | systemPatterns.md | 63 | 80 | ✅ |
 | techContext.md | 57 | 80 | ✅ |
 | projectbrief.md | 22 | 50 | ✅ |
