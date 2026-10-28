@@ -35,5 +35,6 @@ int workspace_display_notch_height(uint32_t did);
 pid_t workspace_get_dock_pid(void);
 bool workspace_event_handler_begin(void **context);
 bool workspace_use_macos_space_workaround(void);
+bool workspace_is_macos_27_or_later(void);
 
 #endif
