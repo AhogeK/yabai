@@ -370,6 +370,7 @@ git checkout ai-base
 - 录屏/计时/焦点实验必须在**空闲会话**进行；出现用户鼠标/键盘事件即作废该次样本，测试后恢复焦点、空间与配置
 - 不把 `skip_window_focus_animation` 之类的运行期配置当持久设置：daemon 重启即复位；结论必须写明当前 `yabai -m config` 实测值
 - 行为类修复未在用户重启后的真实环境验证前，状态只能标“待验证”，不得写“已修复”
+- Dock 窗口排序跟随（`workspaces-auto-swoosh`）与 yabai 合成手势不能同时负责切换：两者都会触发前台切换，形成两个 APP 来回闪；关闭 auto-swoosh 时必须保持 `skip_window_focus_animation` off
 
 ## Execution Flow
 

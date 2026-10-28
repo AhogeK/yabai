@@ -1,6 +1,6 @@
 # Plan: window focus fast landing on hidden desktops
 
-Date: 2026-10-29 · Status: in-progress (runtime verification pending) · Versions: 7.2.13 → 7.2.14
+Date: 2026-10-29 · Status: completed (included in 7.2.18) · Versions: 7.2.13 → 7.2.18
 
 ## Objective
 

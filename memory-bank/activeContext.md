@@ -14,15 +14,24 @@
 - 计划：`docs/plans/2026-10-28-macos-27.2-support.md`（completed）
 - 发布：功能 `a0427be` / 版本 `6cd952d` / 手册 `5a53ab8`（ai-base）；dev `4aef480`/`c6bcce7`/`ff62fb3`；master `c35bbe0`/`0eb0cef`/`ac1aaa4`；三支已推送且与 origin 一致
 
-## 🧭 7.2.14 同 APP 跨 desktop 焦点落点（2026-10-29，待目视验证）
+## ✅ 27.2 全类型焦点切换（7.2.18，2026-10-29，用户验证）
+
+- 根因：27 对应用/窗口激活的隐式 space 切换播放动画；Dock 日志确认来源是 `workspaces-auto-swoosh` 的窗口排序跟随
+- 最终配置：`workspaces-auto-swoosh=false`（Dock 重启后生效）+ `skip_window_focus_animation=off`；Dock 不再切，yabai/前台脚本独占
+- 7.2.15：实现 27 IOHID payload + companion 三阶段手势；7.2.17：等待 display 稳定、目标 space 可见后才聚焦，超时中止（替代 7.2.16 的动画中切换）
+- 7.2.18：`skip_window_focus_animation` 恢复默认 off，避免手势与脚本 `space --focus` 互相触发（两个 APP 来回闪）
+- 实测：直接 `space --focus` 无横移；最终配置下用户确认无问题；仍需长期观察
+- 计划：`docs/plans/2026-10-29-macos27-iohid-gesture.md`（completed）
+
+## ✅ 7.2.14 同 APP 跨 desktop 焦点落点（已完成，含在 7.2.18）
 
 - 事实：`opt+shift+tab` → `same_app_window_forward.sh` 只发 `window --focus`；daemon 该命令只做 SLPS/AX 聚焦，27.2 对“窗口激活引发的隐式 space 切换”播放横移动画（不是脚本问题）
 - 对照：`cmd+tab` → `window_focused_event_script.sh` 先 `space --focus`（SA/SLS 直切）再 `window --focus` → 立即落点
 - 修复：`message.c` 的 `window --focus` 在目标 space 不可见且窗口未最小化时，先 `space_manager_focus_space(sid)`（与 `space --focus` 同一路径），再聚焦窗口；SA 失败/MC/动画中回退原生切换
 - 版本：7.2.14（OSAX 2.1.41 不变）；编译 0 警告、`make -C tests` 2/2
 - 用户反馈（2026-10-29）：window focus 本身就是触发点，不允许把修复解释成"脚本只发 window --focus"的脚本层问题
-- 现场核对：当前安装/运行仍是 **7.2.13**（daemon 18:47 启动），7.2.14 未部署；30fps 录屏在 7.2.13 的同屏/跨屏同 APP 场景未捕获横移（测试期间检测到用户鼠标操作，环境非空闲，结论不作最终判定）
-- 状态：**7.2.14 已提交，待用户安装/重启后目视确认；若仍动画，下一步用上游 `skip_window_focus_animation` 合成手势路径对照（注意跨屏会移动光标）**
+- 现场：7.2.14 已包含在 7.2.18，用户验证通过，不再单独部署
+- 状态：✅ 完成（`window --focus` 预切换保留）
 - 提交：ai-base 功能 `9e7bcb8` / 版本 `04d4d8c`；dev `b0c71a8`/`24c3376`；master `27ca10e`/`d1aa085`；代码内容一致
 
 ## ✅ 7.2.6 空间身份修复 —— 主屏失背景已闭环（2026-10-23）

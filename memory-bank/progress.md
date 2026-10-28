@@ -1,30 +1,31 @@
 # Progress - yabai
 
-## Current Phase: window focus fast landing（7.2.14）⏳ 已提交，待运行验证 (2026-10-29)
-
-- `window --focus` 跨隐藏 space 时先走 `space_manager_focus_space`（SA/SLS），去掉 macOS 原生横移动画；编译 0 警告、tests 2/2；已提交，待用户安装/重启目视验证
+## Current Phase: 27.2 焦点切换（7.2.18）✅ 用户验证 (2026-10-29)
 
 ---
 
 ## Phase History
-### Phase 43: window focus fast landing（7.2.14）⏳ 已提交，待运行验证 (2026-10-29)
+
+### Phase 44: 27.2 焦点切换（7.2.18）✅ 用户验证 (2026-10-29)
+- 根因：27 动画来自 `workspaces-auto-swoosh` 窗口排序跟随（Dock 日志 `ordered on non-visible space`）
+- 7.2.15：27 IOHID payload + companion；7.2.17：等待 display 稳定、目标 space 可见后才聚焦，超时中止
+- 7.2.18：skip 默认 off；最终配置 auto-swoosh=false + skip off，用户验证无问题
+
+### Phase 43: window focus fast landing（7.2.14）✅ 已包含在 7.2.18 (2026-10-29)
 - 事实：`window --focus` 只做 SLPS/AX 聚焦；27.2 对窗口激活引发的隐式 space 切换播放横移动画，与脚本无关
 - 修复：目标 space 不可见且窗口未最小化时，命令内部先 `space_manager_focus_space(sid)`（SA/SLS 直切），再 SLPS 聚焦；失败回退原生
 - 提交：ai-base 功能 `9e7bcb8` / 版本 `04d4d8c`；dev `b0c71a8`/`24c3376`；master `27ca10e`/`d1aa085`
-- 验证：编译 0 警告 + tests 2/2；30fps 录屏因用户输入干扰不作结论；待安装 7.2.14 后确认
-- 文档：`docs/plans/2026-10-29-window-focus-fast-landing.md`（in-progress）
+- 验证：随 7.2.18 用户验证通过；直接 space focus 录屏无横移
+- 文档：`docs/plans/2026-10-29-window-focus-fast-landing.md`（completed）
 
 ### Phase 42: macOS 27.2 支持（崩溃修复 + 全功能适配）✅ (2026-10-28)
 - 根因：固定扫描窗口越过新 Dock 的 `__TEXT` 末尾，读进保护页；Dock 启动即崩（崩溃循环）
-- 恢复：移除 SA + 重启；`launchctl` 服务名是 `com.apple.Dock.agent`
-- 修复：`hex_find_seq` 钳制到段末尾；`verify_dock_build()` 未知 Dock 构建拒绝初始化（7.2.7 / OSAX 2.1.35）
+- 恢复/修复：移除 SA + 重启（`launchctl` 服务名 `com.apple.Dock.agent`）；`hex_find_seq` 钳制到段末尾；`verify_dock_build()` 未知 Dock 构建拒绝初始化（7.2.7 / OSAX 2.1.35）
 - 27.2 适配：7.2.8 create/focus、7.2.9 destroy（CGSSpaceDestroy）、7.2.10 move/排序（CGSMoveManagedSpaceToDisplayIndex + SLSTransaction*）、7.2.11 修复 profile 跳过的 Swift 桥解析、7.2.13 修复 __DATA_CONST 段校验误判并**运行验证 create/focus/move/排序/destroy 全部通过**；7.2.12 上线前审计 + 双轴代码审查（段范围校验、fail-closed、握手属性、落点/焦点、autoreleasepool、文档）；桌面编号恢复全局（skhdrc 已回滚）；跨 space window focus 不影响（daemon 走 _SLPS+AX）
 - 发布：ai-base `5a53ab8` · dev `ff62fb3` · master `ac1aaa4`；三支已推送，代码内容一致，dev/master 无 AI 文件
 
-
 ### Phase 41: 空间身份修复 —— 主屏失背景根因 ✅ (2026-10-23)
-- 根因：macOS 27 `space --create` 把显示器 UUID 当新空间身份；系统 “+” 用每次新生成的 UUID（对照实测：id 33 唯一 vs id 26 = 显示器 UUID）
-- 机制：相同身份在 `com.apple.spaces` 中重复 → 开机恢复按身份匹配 → 全部塌缩到同一 id → Mission Control 只见 1 个桌面、无壁纸
+- 根因/机制：`space --create` 把显示器 UUID 当新空间身份（系统 “+” 每次新 UUID）；相同身份在 `com.apple.spaces` 重复 → 开机恢复全部塌缩到同一 id → 只见 1 个桌面、无壁纸
 - 修复：`src/osax/payload.m` create 传 `CFUUIDCreate` 新 UUID + 落点显示器校验；版本 7.2.5→7.2.6，OSAX 2.1.33→2.1.34
 - 状态：编译 0 警告；已部署实测（新空间 uuid 唯一）+ 清理旧模型后重启验证通过（15:52，order [1]/[6]/[7]）
 
@@ -91,8 +92,8 @@
 
 | 文件 | 行数 | 限制 | 状态 |
 |------|------|------|------|
-| activeContext.md | 55 | 150 | ✅ |
-| progress.md | 98 | 100 | ✅ |
+| activeContext.md | 64 | 150 | ✅ |
+| progress.md | 99 | 100 | ✅ |
 | systemPatterns.md | 63 | 80 | ✅ |
 | techContext.md | 57 | 80 | ✅ |
 | projectbrief.md | 22 | 50 | ✅ |
