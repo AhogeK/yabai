@@ -126,6 +126,12 @@ enum window_rule_flag
 };
 
 static inline bool window_check_flag(struct window *w, enum window_flag x) { return w->flags & x; }
+
+// Sticky windows are visible on every space, even when their assigned space is not frontmost.
+static inline bool window_is_visible(bool ordered_in, bool is_minimized, bool is_hidden, bool is_sticky, bool space_visible)
+{
+    return ordered_in && !is_minimized && !is_hidden && (is_sticky || space_visible);
+}
 static inline void window_clear_flag(struct window *w, enum window_flag x) { w->flags &= ~x; }
 static inline void window_set_flag(struct window *w, enum window_flag x) { w->flags |= x; }
 
@@ -149,6 +155,12 @@ int window_level(uint32_t wid);
 int window_sub_level(uint32_t wid);
 uint64_t window_tags(uint32_t wid);
 bool window_is_sticky(uint32_t wid);
+
+static inline bool window_is_sticky_effective(struct window *window)
+{
+    return window_check_flag(window, WINDOW_STICKY) || window_is_sticky(window->id);
+}
+
 CGPoint window_ax_origin(struct window *window);
 CGRect window_ax_frame(struct window *window);
 CFStringRef window_ax_role(struct window *window);

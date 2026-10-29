@@ -346,6 +346,96 @@ out:
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+static void application_fast_land(struct application *application)
+{
+    //
+    // The caller resolves pending application windows before this runs.
+    // A newly launched or reopened application otherwise has no windows
+    // in the table.
+    //
+    if (g_space_manager.fast_window_switch) {
+        //
+        // Preserve the existing 1500 ms guard: fence an activation only
+        // when the last Cmd+Tab is older than that. A recent Cmd+Tab is
+        // still settling, so the fence is intentionally skipped.
+        uint64_t last_cmd_tab_time = __atomic_load_n(&__last_cmd_tab_time, __ATOMIC_RELAXED);
+        float dt = ((float) read_os_timer() - last_cmd_tab_time) * (1000.0f / (float)read_os_freq());
+        if (dt > 1500.0f) {
+            CFTypeRef dummy = NULL;
+            AXUIElementCopyAttributeValue(application->ref, CFSTR("__fence"), &dummy);
+            if (dummy) CFRelease(dummy);
+        }
+
+        int window_count = 0;
+        struct window **window_list = window_manager_find_application_windows(&g_window_manager, application, &window_count);
+        struct window *target_window = NULL;
+
+        //
+        // Prefer the window that the application just focused. Falling back to
+        // the first window in table order can pick a minimized window or a
+        // window on a different space.
+        //
+        uint32_t focused_window_id = application_focused_window(application);
+        if (focused_window_id) {
+            target_window = window_manager_find_window(&g_window_manager, focused_window_id);
+            if (target_window && window_check_flag(target_window, WINDOW_MINIMIZE)) {
+                target_window = NULL;
+            }
+        }
+
+        bool has_visible_window = false;
+        bool app_hidden = application->is_hidden;
+
+        for (int i = 0; i < window_count; ++i) {
+            struct window *window = window_list[i];
+            uint64_t sid = window_space(window->id);
+            if (!sid) continue;
+
+            uint8_t ordered_in = 0;
+            SLSWindowIsOrderedIn(g_connection, window->id, &ordered_in);
+
+            bool is_minimized = window_check_flag(window, WINDOW_MINIMIZE);
+            bool is_sticky = window_is_sticky_effective(window);
+            bool child_visible = window_is_visible(ordered_in, is_minimized, app_hidden, is_sticky, space_is_visible(sid));
+
+            if (child_visible) {
+                has_visible_window = true;
+                break;
+            }
+            if (!is_minimized && !target_window) target_window = window;
+        }
+
+        if (!has_visible_window && target_window) {
+            uint64_t sid = window_space(target_window->id);
+            bool sid_visible = sid && space_is_visible(sid);
+            bool pending = __atomic_load_n(&__pending_window_focus, __ATOMIC_RELAXED);
+
+            debug("%s: app=%s target_sid=%llu visible=%d pending=%d\n",
+                  __FUNCTION__, application->name, sid, sid_visible, pending);
+
+            //
+            // Do not gate on __pending_window_focus here. This activation
+            // sets it through the AX focused-window notification; skipping
+            // would leave no component to perform the landing.
+            //
+            if (sid && !sid_visible) {
+                uint64_t wait_start = read_os_timer();
+                SLSSpaceSetFrontPSN(g_connection, sid, application->psn);
+                enum space_op_error result = space_manager_focus_space(sid);
+                debug("%s: fast front switch to space=%llu result=%d\n", __FUNCTION__, sid, result);
+
+                if (result == SPACE_OP_ERROR_SUCCESS || result == SPACE_OP_ERROR_SAME_SPACE) {
+                    if (space_manager_wait_until_visible(sid, wait_start, 500)) {
+                        window_manager_focus_window_with_raise(&application->psn, target_window->id, target_window->ref);
+                    } else {
+                        debug("%s: fast front switch aborted: space=%llu did not become visible\n", __FUNCTION__, sid);
+                    }
+                }
+            }
+        }
+    }
+}
+
 static EVENT_HANDLER(APPLICATION_FRONT_SWITCHED)
 {
     struct process *process = context;
@@ -356,23 +446,15 @@ static EVENT_HANDLER(APPLICATION_FRONT_SWITCHED)
         return;
     }
 
-    if (g_space_manager.skip_window_focus_animation) {
-        uint64_t psn_sid = process_manager_active_space_for_psn(application->connection);
-
-        uint64_t last_cmd_tab_time = __atomic_load_n(&__last_cmd_tab_time, __ATOMIC_RELAXED);
-        float dt = ((float) read_os_timer() - last_cmd_tab_time) * (1000.0f / (float)read_os_freq());
-        if (dt > 1500.0f) {
-            CFTypeRef dummy = NULL;
-            AXUIElementCopyAttributeValue(application->ref, CFSTR("__fence"), &dummy);
-        }
-
-        if (__atomic_load_n(&__pending_window_focus, __ATOMIC_RELAXED) == false) {
-            if (psn_sid && !space_is_visible(psn_sid)) {
-                SLSSpaceSetFrontPSN(g_connection, psn_sid, process->psn);
-                space_manager_focus_space_using_gesture(space_display_id(psn_sid), psn_sid);
-            }
+    for (int i = 0; i < buf_len(g_window_manager.applications_to_refresh); ++i) {
+        if (application == g_window_manager.applications_to_refresh[i]) {
+            debug("%s: %s has windows that are not yet resolved\n", __FUNCTION__, application->name);
+            window_manager_add_existing_application_windows(&g_space_manager, &g_window_manager, application, i);
+            break;
         }
     }
+
+    application_fast_land(application);
 
     struct application *deactivated_application = window_manager_find_application(&g_window_manager, g_process_manager.front_pid);
     if (deactivated_application) event_signal_push(SIGNAL_APPLICATION_DEACTIVATED, deactivated_application);
@@ -383,14 +465,6 @@ static EVENT_HANDLER(APPLICATION_FRONT_SWITCHED)
     g_process_manager.last_front_pid = g_process_manager.front_pid;
     g_process_manager.front_pid = process->pid;
     event_signal_push(SIGNAL_APPLICATION_FRONT_SWITCHED, NULL);
-
-    for (int i = 0; i < buf_len(g_window_manager.applications_to_refresh); ++i) {
-        if (application == g_window_manager.applications_to_refresh[i]) {
-            debug("%s: %s has windows that are not yet resolved\n", __FUNCTION__, application->name);
-            window_manager_add_existing_application_windows(&g_space_manager, &g_window_manager, application, i);
-            break;
-        }
-    }
 
     uint32_t application_focused_window_id = application_focused_window(application);
     if (!application_focused_window_id) {
