@@ -371,6 +371,7 @@ git checkout ai-base
 - 不把 `skip_window_focus_animation` 之类的运行期配置当持久设置：daemon 重启即复位；结论必须写明当前 `yabai -m config` 实测值
 - 行为类修复未在用户重启后的真实环境验证前，状态只能标“待验证”，不得写“已修复”
 - Dock 窗口排序跟随（`workspaces-auto-swoosh`）与 yabai 合成手势不能同时负责切换：两者都会触发前台切换，形成两个 APP 来回闪；关闭 auto-swoosh 时必须保持 `skip_window_focus_animation` off
+- `workspaces-auto-swoosh` 修改后必须重启 Dock 才生效；验证前比较 Dock 启动时间与 plist 修改时间，避免把旧进程行为当成新设置
 
 ## Execution Flow
 

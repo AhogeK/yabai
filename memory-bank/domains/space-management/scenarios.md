@@ -1,7 +1,7 @@
 # scenarios — 触发场景 → 判断 → 动作
 
 > **系统基线**：macOS 27.2 (26B123) · Dock 2571.1.32.402 · WindowManager 462.1.41.404
-> **最后验证**：2026-10-28 · **状态**：已验证（S1/S8/S10 + 27.2 全功能实测）
+> **最后验证**：2026-10-29 · **状态**：已验证（S1/S8/S10 + 27.2 全功能实测）；7.2.20 fast landing 为源码/单测结论，**运行时待验证**
 > **来源**：S1 排查顺序与 27.2 行为实测；S4（ivar 改名）与 S6 为推论，待实测
 
 ## S1. `yabai -m space --create` 无效果
@@ -144,6 +144,10 @@ EVENT_HANDLER_SPACE_CHANGED: 50                    ← 它的效果
 
 **动作**：
 1. 27.2 上关闭 Dock 窗口排序跟随：`defaults write com.apple.dock workspaces-auto-swoosh -bool false`（需重启 Dock；同时关闭 Dock 图标跟随，由 yabai/前台脚本接管）；
-2. 保持 `yabai -m config skip_window_focus_animation off`；同时开启 Dock 跟随与合成手势会互相触发，两个 APP 来回闪；
-3. yabai 7.2.18 在 27 上等待 display 稳定后才切；`window --focus` 等目标 space 可见后才聚焦，超时中止，避免黑屏/切错；
-4. 直接 `space --focus` 已确认无横移；若仍动画，检查 yabairc 是否覆盖设置或 Dock 是否已重启。
+2. `skip_window_focus_animation` 只管 `WINDOW_FOCUSED` 的合成手势路径，默认 off；它不控制 application front-switch 的 fast landing；
+3. 7.2.19+ `fast_window_switch` 默认 on：application front-switch 先解析待刷新窗口，优先应用当前焦点窗口，排除 minimized fallback，sticky 按可见处理；目标 space 不可见时最多等 500ms 再聚焦；不因 AX pending 焦点跳过落点；
+4. 有 SA 时 fast landing 走直接 SLS focus；没有 SA 时 `space_manager_focus_space` 回退合成手势，因此 Dock follow 必须保持 0；
+5. 7.2.18 在 27 上等待 display 稳定后才切；`window --focus` 等目标 space 可见后才聚焦，超时中止，避免黑屏/切错；
+6. 直接 `space --focus` 已确认无横移；若仍动画，检查 yabairc 是否覆盖设置或 Dock 是否已重启。
+
+> 7.2.20：S11 的 fast landing 行为由源码与单测核对，尚未在 7.2.20 运行环境验证。

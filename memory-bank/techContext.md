@@ -55,3 +55,19 @@
 
 - IOKit (`CGDisplayIOServicePort`) 在 Dock 沙箱返回 `MACH_PORT_NULL`（静默失败）
 - 用 `CGDisplayCreateUUIDFromDisplayID`（CoreGraphics，沙箱安全）
+
+## REA / Hopper（2026-10-29）
+
+- REA 的 Hopper provider 用 `hopper -Y bootstrap.py ...` 注入 bridge；Hopper 已在运行时该命令返回 0 但**不执行脚本**，REA 会等到启动超时（临时 bootstrap 看似卡住）
+- 使用前先退出 Hopper 主程序与 ExternalAPI；`close_binary` 后同样退出，保证下一次冷启动
+- Hopper 6.1.0-demo 冷启动可用（实测 `/bin/ls` 133 procedures）；若出现 demo/license 对话框，先处理再重试
+
+## Ghidra 12.1.4（REA 6.8.0 固定验证；系统 12.2 保持更新）
+
+- 安装路径：`/Users/ahogek/.local/share/ghidra/ghidra_12.1.4_PUBLIC`；Homebrew `/opt/homebrew/opt/ghidra` 是 12.2，**不可**指向 REA
+- REA 6.8.0 的 `SUPPORTED_GHIDRA_VERSION=12.1.4`；同 major.minor 可能标 compatible，不同 major/minor unsupported
+- 原生反编译器已构建：`support/gradle/gradlew --no-daemon :Decompiler:buildNatives_mac_arm_64`，产物在 `Ghidra/Features/Decompiler/os/mac_arm_64/{decompile,sleigh}`
+- `~/.omp/agent/mcp.json` 与 `~/.zprofile` 的 `GHIDRA_INSTALL_DIR` 均指向 12.1.4；改后重启 omp/MCP
+- 版本漂移：用 Ghidra 前/至少每月跑 `npm view rea-agents version` + `doctor --provider ghidra --json`；新版支持新 Ghidra 时 side-by-side 安装，**不要** `brew upgrade ghidra` 后直接指过去
+- Ghidra provider 不接受 universal Mach-O；先 `lipo -thin arm64/arm64e`。Hopper 可直接处理 universal
+- 2026-10-29 实测：`doctor` healthy，`binary_session` provider 12.1.4；REA server expected skill 49，本地 skill 53 超前，以服务器 tool list 为准

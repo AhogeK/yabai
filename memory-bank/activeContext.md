@@ -20,9 +20,38 @@
 - 最终配置：`workspaces-auto-swoosh=false`（Dock 重启后生效）+ `skip_window_focus_animation=off`；Dock 不再切，yabai/前台脚本独占
 - 7.2.15：实现 27 IOHID payload + companion 三阶段手势；7.2.17：等待 display 稳定、目标 space 可见后才聚焦，超时中止（替代 7.2.16 的动画中切换）
 - 7.2.18：`skip_window_focus_animation` 恢复默认 off，避免手势与脚本 `space --focus` 互相触发（两个 APP 来回闪）
+- 7.2.19（审查修复，源码已提交）：新增 `fast_window_switch`（默认 on），`skip_window_focus_animation` 恢复默认 off；前台切换优先 focused window、排除 minimized fallback、sticky 按可见处理；切换后最多 500ms 等 space 可见再 raise；恢复 Cmd+Tab `__fence`；删除 `process_manager_active_space_for_psn`；可见性抽成 `window_is_visible`，tests 3/3；构建 0 warning
+- 2026-10-29 复测：重装后 Dock `workspaces-auto-swoosh=1`，与 fast path 竞争 → 间歇动画；已设为 0，Dock 于 22:10 重启后用户确认隐藏空间切换无动画；fast on / skip off / debug off
+- 7.2.20（复审修复，源码已提交）：fast landing 在 `applications_to_refresh` 解析后执行；移除 `__pending_window_focus` 拦截；sticky 判断抽成 `window_is_sticky_effective`；分离 `skip`/`fast` 文档并注明无 SA 的 gesture fallback；tests 4/4；构建 0 warning
+- 2026-10-30：R22 增加 Dock 设置生效检查；7.2.20 复审修复已完成源码、测试与文档，运行时待用户重启验证
+- 2026-10-30 发布提交：ai-base `87d35c7`（code）/`d96ed38`（docs）/`3089347`（7.2.20）；dev `fa4893a`/`4741e79`/`95c2f88`；master `2d10a3f`/`32bbbdf`/`5e7d2db`；AI 记录独立提交
 - 实测：直接 `space --focus` 无横移；最终配置下用户确认无问题；仍需长期观察
 - 计划：`docs/plans/2026-10-29-macos27-iohid-gesture.md`（completed）
 - 发布：功能 `c9c1ff2` / 版本 `5fdb079`（ai-base）；dev `cff32ad`/`f11c765`；master `1cce764`/`ffb5952`；AI 记录 `f4fa857`
+- 后续：Dock 启动/重开路径动画已完成调查，结论见下节
+
+## ✅ REA/Ghidra provider + reverse-engineering skill v3（2026-10-29）
+
+- `~/.config/opencode/skills/reverse-engineering/SKILL.md` v3：任何 rea 调用前强制加载 `reverse-engineer-anything`；明确 REA 技能优先于本机事实
+- Ghidra：独立 12.1.4 为 REA 唯一支持版本；Homebrew 12.2 不可指向；`~/.zprofile` 已同步，`doctor` healthy，`binary_session` 显示 12.1.4
+- 新增 §1a 版本漂移：用前/每月 `npm view rea-agents version` + doctor；新版支持新 Ghidra 时 side-by-side 安装并重启
+- 验证：baseline 子代理误答 Homebrew 路径且无升级流程；GREEN 子代理正确选 12.1.4、先读 REA 技能、给出 side-by-side 升级
+- 待办：无
+
+## 🔬 Dock 平移动画调查（2026-10-29，Dock 参数层已排除）
+
+- Dock `2571.1.32.402` arm64e；Cmd+Tab 路径 `FUN_100126768` 在 `0x1268dc` 置 `x1=1` 后调 `FUN_100188858(space,x1,x2,x3,x4)`
+- 已否定：launch closure `x1=0`、Cmd+Tab `0x1268dc x1=0`、`x2=1`、`FUN_1000c27c8` 内 `isAnimating=false`
+- 2026-10-29 追加 A/B：Dock 点击 `magpie(space2) -> cmux(space1)`，30fps 录制；`0x1000c4878` 的 `mov w2,#1` 运行期改为 `mov w2,#0`（`SLSTransactionSetManagedDisplayIsAnimating`），readback 确认，**动画仍存在**；该 flag 未证明是开关（断点命中未完成：暂停 Dock 后 AX 点击无法进入）
+- `WASpaceFrameAnimation` 在 Dock `NSClassFromString` 为 nil；Dock 导入 `WindowManager.TransitionAnimation`，`WindowManager`/`SkyLight` 虽加载在 Dock，但动画类不在 Dock 注册
+- 结论：**撤回此前“yabai 绝对做不到”的结论**；Dock 参数层未被证明可修，WindowServer/WindowManager 的 transition 入口尚未定位，需 root attach 或更多静态取证
+- 用户拒绝 front-switch/脚本 workaround；源码已回退 7.2.18 / OSAX 2.1.41，未安装
+- 计划：`docs/plans/2026-10-29-dock-space-transition-animation.md`（closed；7.2.19 运行时已验证，7.2.20 source 待运行时验证）
+- 2026-10-29 18:48 事故：按建议直接 `sudo lldb -p WindowServer` 导致 WindowServer SIGSTOP、GUI 冻结并由系统自动重启；无持久修改，`/tmp/ws-survey.log` 随重启清除；**禁止再次 attach WindowServer**，后续只能非停止采样或带 watchdog 的短时 attach
+- 2026-10-29 18:53 基线恢复：安装 `yabai-v7.2.18` / OSAX 2.1.41；源码 diff 空；无 LLDB 残留；WindowServer/Dock 正常
+- 2026-10-29 native fast landing v2（已部署）：按 application window visibility 找目标窗口，再 `space_manager_focus_space(sid)` + `window_manager_focus_window_with_raise`；不再依赖 PSN space
+- 2026-10-29 v2 实测（用户已部署）：debug 日志确认 `fast front switch` 每步返回 0，`SPACE_CHANGED` 正常；WindowServer 滑动仍存在；实际开启 `ReduceMotionEnabled=1` 也无法消除（已恢复 0）；native fast landing 只能快速落位，不能移除系统滑动
+- 2026-10-29 决策：保留 native fast landing，接受 WindowServer 系统滑动；debug off；7.2.20 复审修复后 skip off / fast on；源码未提交，版本 7.2.20；运行时烟雾待用户重启验证
 
 ## ✅ 7.2.14 同 APP 跨 desktop 焦点落点（已完成，含在 7.2.18）
 
@@ -49,7 +78,7 @@
 
 ## 当前工作焦点
 
-无进行中任务。macOS 27.2 支持（7.2.13）已完成并真机验证；后续按日常使用观察。
+当前工作焦点：7.2.20 复审修复已提交，运行时待用户重启验证；7.2.19 在 Dock 22:10 重启后用户确认无动画；fast on / skip off / dock follow 0；不 attach WindowServer。
 
 ## 已知设计限制（不处理）
 

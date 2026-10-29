@@ -1,10 +1,27 @@
 # Progress - yabai
 
-## Current Phase: 27.2 焦点切换（7.2.18）✅ 用户验证 (2026-10-29)
+## Current Phase: 7.2.20 复审修复 ✅ 源码完成，待提交 (2026-10-29)
 
 ---
 
 ## Phase History
+
+### Phase 46: Dock 平移动画：Dock 参数层已排除，WindowServer 待证 🔬 (2026-10-29)
+- 实测否定：launch closure `x1=0`、Cmd+Tab `0x1268dc x1=0`、`x2=1`、`isAnimating=false`
+- 追加 A/B：Dock 点击 magpie(space2)->cmux(space1)，30fps；`0x1000c4878` 的 `isAnimating=1 -> 0` readback 确认，动画仍存在；该 flag 未证明是开关，断点命中未完成
+- 结论：此前“yabai 绝对做不到”撤回；Dock 参数层无解决证据，WindowServer/WindowManager transition 未定位；需 root attach 或更多静态取证
+- 源码回退 7.2.18 / OSAX 2.1.41（编译验证），未安装；计划 `docs/plans/2026-10-29-dock-space-transition-animation.md`（closed；7.2.19 运行时已验证，7.2.20 source 待运行时验证）
+- 2026-10-29 18:48 事故：直接 root LLDB attach WindowServer → WindowServer 停止、GUI 冻结、系统自动重启；无持久修改；root attach 方案废弃
+- 2026-10-29 18:53 基线恢复：安装 7.2.18 / OSAX 2.1.41，源码 diff 空，系统与 space 查询正常
+- 2026-10-29 native fast landing v2（已部署）：窗口可见性驱动，直接 focus space + focus window；编译通过 7.2.18
+- 2026-10-29 v2 实测：fast front switch result=0、SPACE_CHANGED 正常，但 WindowServer 滑动仍存在；ReduceMotionEnabled=1 也无效；决策：保留 fast landing，接受滑动
+- 2026-10-29 7.2.20 复审修复：fast landing 移到窗口解析后；移除 pending 拦截；effective sticky helper；分离 skip/fast 文档；tests 4/4；构建 0 warning；运行时待用户重启验证（7.2.19 已由用户确认无动画）；ai-base 87d35c7/d96ed38/3089347，dev fa4893a/4741e79/95c2f88，master 2d10a3f/32bbbdf/5e7d2db
+
+### Phase 45: REA/Ghidra provider + reverse-engineering skill v3 ✅ (2026-10-29)
+- `reverse-engineering` SKILL v3：任何 rea 调用前强制加载 `reverse-engineer-anything`；明确 REA 技能 + 当前 `tools/list` 优先
+- Ghidra 12.1.4 独立安装（REA 6.8.0 唯一验证版）；Homebrew 12.2 不可指向；`~/.zprofile` + mcp.json 同步，doctor healthy
+- 新增 §1a：用前/每月版本复核；新版支持新 Ghidra 时 side-by-side 安装并重启
+- 验证：baseline 子代理误答 Homebrew 路径且无升级流程；GREEN 子代理正确选 12.1.4、先读 REA 技能、给出 side-by-side 升级
 
 ### Phase 44: 27.2 焦点切换（7.2.18）✅ 用户验证 (2026-10-29)
 - 根因：27 动画来自 `workspaces-auto-swoosh` 窗口排序跟随（Dock 日志 `ordered on non-visible space`）
@@ -43,24 +60,7 @@
 - 分支同步：补齐 dev/master 缺失的 `#2780 implement` 与 `#2217`（内容回到与 ai-base 一致），普通推送 dev `83c7916` / master `70e084b`
 - 状态：✅ 已实测通过（退出全屏效果 OK、无新崩溃）+ 已提交推送（ai-base 6115f7b / dev 4e39363 / master 6c8152e，7.2.5）
 
-### Phase 39: macOS 27 (26A428) SA 修复 ✅ (2026-09-15)
-- **环境**: macOS 27.0 (26A428)，Dock 2571.0.6.402，WindowManager.framework 462.0.8
-- **症状**: 系统升级后 space --create / space --focus / window --focus 全部失效
-- **根因 1**: `verify_os_version()` 无 27 分支 → `init_instances()` 提前 return，SA 所有功能失效
-- **根因 2**: Dock 删除 Swift 空间创建入口（26.6 的 0x1f07d4），空间管理下沉到 WindowManager.framework
-- **修复**:
-  - 新增 27 版本门 + 全套 offset/pattern 27 分支（dppm 0x40000、remove/move 0x180000、fix_anim 0x220000）
-  - set_front_window pattern 首位通配化（cbz 立即数变化）→ 唯一命中 0x192bc
-  - 空间创建改走 `WindowManager.WindowManager.synchronouslyRequestCreateManagedSpace(displayUUID:)`
-    （dlsym mangled 符号 + Swift ABI：x20=self，x0/x1=String，错误在 x21）
-  - OSAX_VERSION 2.1.31 → 2.1.32
-- **静态验证**: ✅ pattern 命中/唯一性/全局解码（Spaces=0x100409bb0，DPPM=0x100409c50）+ x86_64/arm64 编译通过
-- **状态**: ✅ **已完成并端到端验证**（7.1.29；yabai `space --create` 实测 10 -> 11，Dock 无崩溃）
-- **7.1.29→7.1.33 迭代（2026-09-15）**:
-  - 29: dlsym 指针需 `blraaz`（PAC 崩溃修复）
-  - 30/31: WindowManager admin XPC 的断言制路径（layout control → create → commit）——实测不通
-  - 32: Dock 内直连 `CGSSpaceCreate` —— 返回 NULL
-  - 33: 静态定位到 Dock 内部 Swift helper `0x2bb62c`（与 WindowManager.app `0x100426ab0` 逐字节同构 = "+"按钮同源）+ cid 懒加载 getter `0x2c2aa8`；改为在主线程调用该 helper（G3 XPC 降级为回退）
+> Phase 39（macOS 27 SA 修复）已归档至 `archive/progress-2026-09.md`。
 
 ### Phase 38: macOS 26.6 (25G72) space creation fix ✅ (2026-08-05)
 - space_create_entry 0x1f07d8 → 0x1f07d4；dock_spaces pattern 0 匹配 → DOUBLE-ANCHOR 兜底（0x488028）
@@ -93,8 +93,8 @@
 
 | 文件 | 行数 | 限制 | 状态 |
 |------|------|------|------|
-| activeContext.md | 65 | 150 | ✅ |
+| activeContext.md | 94 | 150 | ✅ |
 | progress.md | 100 | 100 | ✅ |
 | systemPatterns.md | 63 | 80 | ✅ |
-| techContext.md | 57 | 80 | ✅ |
+| techContext.md | 73 | 80 | ✅ |
 | projectbrief.md | 22 | 50 | ✅ |

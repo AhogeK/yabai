@@ -1,7 +1,7 @@
 # references — 空间 API 与实现对照表
 
 > **系统基线**：macOS 27.2 (26B123) · Dock 2571.1.32.402 · WindowManager 462.1.41.404
-> **最后验证**：2026-10-28 · **状态**：已验证（真机 create/focus/move/排序/destroy）
+> **最后验证**：2026-10-29 · **状态**：已验证（真机 create/focus/move/排序/destroy）；7.2.20 fast landing 表格为源码/单测结论，**运行时待验证**
 > **来源**：`src/osax/payload.m` 调用形态 + 27.2 运行日志
 
 ## daemon → SA 能力对照
@@ -68,6 +68,20 @@
 | space 的 `uuid` | 7.2.6 前 yabai 创建的空间**误用显示器 UUID**（同屏多空间身份重复，开机塌缩）；7.2.6 起每次传新 UUID，系统 “+” 亦如此。27.2 真机验证 id 唯一 |
 
 yabai 的两个序号函数（`src/space_manager.c`）：`space_manager_mission_control_index(sid)` → 全局序号；`space_manager_mission_control_space(N)` → 反查。**两者都跨显示器累加**。
+
+## Application front-switch / fast landing（7.2.20）
+
+| 配置 / 事实 | 值 | 说明 |
+|---|---|---|
+| `fast_window_switch` | 默认 `on` | application front-switch 直接聚焦目标窗口；无 SA 时回退合成手势 |
+| `skip_window_focus_animation` | 默认 `off` | 只控制 `WINDOW_FOCUSED` 的合成手势，不控制 app fast landing |
+| `workspaces-auto-swoosh` | 外部前提 `0` | Dock 不能与 yabai 同时切换；修改后必须重启 Dock |
+| 目标窗口 | focused window 优先 | fallback 为非 minimized 窗口；sticky 视为可见 |
+| 目标可见性 | 最多等待 500ms | 超时不 raise，避免回到旧桌面 |
+
+| 解析顺序 | `applications_to_refresh` 之后 | 新启动/重开 app 必须先解析窗口再选目标 |
+
+> 7.2.20 的 fast landing 配置由源码/单测核对；运行时行为待用户重启验证。
 
 ## 代际与系统版本对照
 
