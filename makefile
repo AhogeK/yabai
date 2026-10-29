@@ -72,22 +72,22 @@ USER_NAME = $(shell whoami)
 
 .PHONY: deploy
 deploy:
-	@echo "🧹 [1/6] 停止并卸载旧服务..."
+	@echo "🧹 [1/7] 停止并卸载旧服务..."
 	-$(BINS) --stop-service 2>/dev/null || true
 	-sudo $(BINS) --uninstall-sa 2>/dev/null || true
 	-$(BINS) --uninstall-service 2>/dev/null || true
 
-	@echo "🏗️  [2/6] 清理并重新编译..."
+	@echo "🏗️  [2/7] 清理并重新编译..."
 	@$(MAKE) clean
 	@$(MAKE) install
 
-	@echo "📚 [3/6] 生成手册页..."
+	@echo "📚 [3/7] 生成手册页..."
 	@$(MAKE) man
 
-	@echo "🔐 [4/6] 签名二进制文件..."
+	@echo "🔐 [4/7] 签名二进制文件..."
 	@codesign -fs - $(BINS)
 
-	@echo "🔑 [5/6] 更新 sudoers 权限..."
+	@echo "🔑 [5/7] 更新 sudoers 权限..."
 	@NEW_HASH=$$(shasum -a 256 $(BINS) | cut -d " " -f 1); \
 	SUDO_LINE="$(USER_NAME) ALL=(root) NOPASSWD: sha256:$$NEW_HASH $(BINS) --load-sa"; \
 	echo "$$SUDO_LINE" | sudo tee /private/etc/sudoers.d/yabai > /dev/null
@@ -106,7 +106,13 @@ deploy:
 	@open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
 	@-sh -c "read -p "按回车继续..." _"
 
-	@echo "🚀 [6/6] 加载 SA 并启动服务..."
+	@echo "[6/7] 配置 Dock 窗口排序跟随..."
+	@defaults write com.apple.dock workspaces-auto-swoosh -bool false
+	@killall Dock 2>/dev/null || true
+	@i=0; while ! pgrep -x Dock >/dev/null && [ $$i -lt 25 ]; do sleep 0.2; i=$$((i+1)); done
+	@pgrep -x Dock >/dev/null || (echo "Dock did not restart"; exit 1)
+
+	@echo "🚀 [7/7] 加载 SA 并启动服务..."
 	# ---- 避免些特殊情况，再执行一遍 -----
 	$(BINS) --stop-service 2>/dev/null || true
 	sudo $(BINS) --uninstall-sa 2>/dev/null || true
@@ -116,5 +122,4 @@ deploy:
 	$(BINS) --install-service	
 	$(BINS) --start-service
 	@echo ""
-	@echo "-------------------------------------------------------"
 	@pgrep -x yabai > /dev/null && echo "✅ 部署完美达成！" || echo "❌ 启动失败，请检查 /tmp/yabai_$(USER_NAME).err.log"
