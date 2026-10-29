@@ -24,7 +24,7 @@
 - 2026-10-29 复测：重装后 Dock `workspaces-auto-swoosh=1`，与 fast path 竞争 → 间歇动画；已设为 0，Dock 于 22:10 重启后用户确认隐藏空间切换无动画；fast on / skip off / debug off
 - 7.2.20（复审修复，源码已提交）：fast landing 在 `applications_to_refresh` 解析后执行；移除 `__pending_window_focus` 拦截；sticky 判断抽成 `window_is_sticky_effective`；分离 `skip`/`fast` 文档并注明无 SA 的 gesture fallback；tests 4/4；构建 0 warning
 - 2026-10-30：R22 增加 Dock 设置生效检查；7.2.20 复审修复已完成源码、测试与文档，运行时待用户重启验证
-- 2026-10-30 发布提交：ai-base `87d35c7`（code）/`d96ed38`（docs）/`3089347`（7.2.20）；dev `fa4893a`/`4741e79`/`95c2f88`；master `2d10a3f`/`32bbbdf`/`5e7d2db`；AI 记录独立提交
+- 2026-10-30 发布提交：ai-base `87d35c7`（code）/`d96ed38`（docs）/`3089347`（7.2.20）/`a710a3c`（AI）；dev `fa4893a`/`4741e79`/`95c2f88`；master `2d10a3f`/`32bbbdf`/`5e7d2db`；origin 三支一致，工作树 clean
 - 实测：直接 `space --focus` 无横移；最终配置下用户确认无问题；仍需长期观察
 - 计划：`docs/plans/2026-10-29-macos27-iohid-gesture.md`（completed）
 - 发布：功能 `c9c1ff2` / 版本 `5fdb079`（ai-base）；dev `cff32ad`/`f11c765`；master `1cce764`/`ffb5952`；AI 记录 `f4fa857`

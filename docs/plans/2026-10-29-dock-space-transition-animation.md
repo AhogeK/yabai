@@ -56,8 +56,9 @@ incident was 7.2.18 / OSAX 2.1.41; the current source is 7.2.20.
 - Runtime debug output restored to off; `skip_window_focus_animation` is off
   and `fast_window_switch` is on.
 - Source changes are committed on ai-base as `87d35c7` (code), `d96ed38`
-  (docs), and `3089347` (version 7.2.20); dev/master are synchronized with
-  the same non-AI commits.
+  (docs), and `3089347` (version 7.2.20); the AI record is `a710a3c`.
+  dev/master are synchronized with the same three non-AI commits and all
+  three branches match origin.
 - A reinstall reset `com.apple.dock workspaces-auto-swoosh` to `1`; Dock
   then raced fast landing and produced intermittent animation. The setting is
   back to `0`; Dock restarted at 22:10 and the user confirmed hidden-space app
