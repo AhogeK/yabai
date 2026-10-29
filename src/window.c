@@ -452,7 +452,7 @@ void window_serialize(FILE *rsp, struct window *window, uint64_t flags)
 
     if ((flags & WINDOW_PROPERTY_IS_VISIBLE) ||
         (flags & WINDOW_PROPERTY_IS_STICKY)) {
-        is_sticky = window_check_flag(window, WINDOW_STICKY) || window_is_sticky(window->id);
+        is_sticky = window_is_sticky_effective(window);
     }
 
     bool did_output = false;
@@ -667,7 +667,7 @@ void window_serialize(FILE *rsp, struct window *window, uint64_t flags)
         uint8_t ordered_in = 0;
         SLSWindowIsOrderedIn(g_connection, window->id, &ordered_in);
 
-        bool visible = ordered_in && !is_minimized && !window->application->is_hidden && (is_sticky || space_is_visible(sid));
+        bool visible = window_is_visible(ordered_in, is_minimized, window->application->is_hidden, is_sticky, space_is_visible(sid));
         fprintf(rsp, "\t\"is-visible\":%s", json_bool(visible));
         did_output = true;
     }

@@ -1164,6 +1164,17 @@ bool space_manager_focus_space_using_gesture(uint32_t new_did, uint64_t new_sid)
 }
 #pragma clang diagnostic pop
 
+bool space_manager_wait_until_visible(uint64_t sid, uint64_t start, uint32_t timeout_ms)
+{
+    while (!space_is_visible(sid)) {
+        float waited_ms = ((float) read_os_timer() - start) * (1000.0f / (float)read_os_freq());
+        if (waited_ms >= (float)timeout_ms) return false;
+        usleep(20000);
+    }
+
+    return true;
+}
+
 enum space_op_error space_manager_focus_space(uint64_t sid)
 {
     bool is_in_mc = mission_control_is_active();
@@ -1405,12 +1416,19 @@ void space_manager_begin(struct space_manager *sm)
     sm->window_zoom_persist = true;
     sm->labels = NULL;
     //
-    // Keep the bypass off by default: it is only needed when the Dock performs
-    // the space switch (workspaces-auto-swoosh). If Dock window-order follow is
-    // disabled, yabai's own space focus owns the switch, and a second synthetic
-    // gesture makes the two applications bounce back and forth.
+    // Keep the synthetic gesture bypass off by default. It is only safe when
+    // the Dock owns the space switch; enabling it while yabai also switches
+    // makes two applications bounce between desktops.
     //
     sm->skip_window_focus_animation = false;
+    //
+    // Fast landing is a separate path: it focuses the target window directly
+    // after yabai switches to its space. With the scripting addition it does
+    // not post a synthetic gesture; without it, space_manager_focus_space
+    // falls back to the gesture path. Keep it on by default; disable it when
+    // another component owns application switching.
+    //
+    sm->fast_window_switch = true;
     table_init(&sm->view, 23, hash_view, compare_view);
 
     int display_count;
