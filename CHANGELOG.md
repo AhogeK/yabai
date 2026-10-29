@@ -1,3 +1,13 @@
+## [7.2.20] - 2026-10-29
+### Fixed
+- Fast landing now waits for an application's windows to resolve before selecting a target, so a newly launched or reopened app can land on its hidden space. It also no longer skips the landing when the activation's AX focused-window notification is still pending
+- `window --focus` treats sticky windows as visible and no longer switches to the window's assigned space. Sticky detection is shared through `window_is_sticky_effective`
+- Documentation now separates `skip_window_focus_animation` (window-focus gesture path) from `fast_window_switch` (application front-switch path) and records the synthetic-gesture fallback without the scripting addition
+
+## [7.2.19] - 2026-10-29
+### Fixed
+- Fast landing now uses the application's focused window, ignores minimized fallback windows, treats sticky windows as visible, waits for the destination space before raising the window, and restores the Cmd+Tab fence. `fast_window_switch` is a separate config, enabled by default; `skip_window_focus_animation` is off by default again
+
 ## [7.2.18] - 2026-10-29
 ### Fixed
 - The macOS 27 focus-animation bypass could fight yabai's own space focus when Dock window-order follow (`workspaces-auto-swoosh`) is disabled, making two applications bounce back and forth. The bypass is no longer enabled by default; `skip_window_focus_animation on` still enables it when the Dock performs the switch
