@@ -52,6 +52,7 @@ extern bool g_verbose;
 #define COMMAND_CONFIG_MOUSE_DROP_ACTION     "mouse_drop_action"
 #define COMMAND_CONFIG_EXTERNAL_BAR          "external_bar"
 #define COMMAND_CONFIG_SKIP_SPACE_ANIMATION  "skip_window_focus_animation"
+#define COMMAND_CONFIG_FAST_WINDOW_SWITCH    "fast_window_switch"
 
 #define SELECTOR_CONFIG_SPACE                "--space"
 
@@ -1274,6 +1275,17 @@ static void handle_domain_config(FILE *rsp, struct token domain, char *message)
             } else {
                 daemon_fail(rsp, "unknown value '%.*s' given to command '%.*s' for domain '%.*s'\n", value.length, value.text, command.length, command.text, domain.length, domain.text);
             }
+        } else if (token_equals(command, COMMAND_CONFIG_FAST_WINDOW_SWITCH)) {
+            struct token value = get_token(&message);
+            if (!token_is_valid(value)) {
+                fprintf(rsp, "%s\n", bool_str[g_space_manager.fast_window_switch]);
+            } else if (token_equals(value, ARGUMENT_COMMON_VAL_OFF)) {
+                g_space_manager.fast_window_switch = false;
+            } else if (token_equals(value, ARGUMENT_COMMON_VAL_ON)) {
+                g_space_manager.fast_window_switch = true;
+            } else {
+                daemon_fail(rsp, "unknown value '%.*s' given to command '%.*s' for domain '%.*s'\n", value.length, value.text, command.length, command.text, domain.length, domain.text);
+            }
         } else if (token_equals(command, COMMAND_CONFIG_OPACITY)) {
             struct token value = get_token(&message);
             if (!token_is_valid(value)) {
@@ -2099,12 +2111,11 @@ static void handle_domain_window(FILE *rsp, struct token domain, char *message)
                 // is immediate; the native switch remains the fallback.
                 //
                 uint64_t sid = window_space(acting_window->id);
-                if (sid && !space_is_visible(sid) && !window_check_flag(acting_window, WINDOW_MINIMIZE)) {
+                if (sid && !space_is_visible(sid) && !window_check_flag(acting_window, WINDOW_MINIMIZE) &&
+                    !window_is_sticky_effective(acting_window)) {
+                    uint64_t wait_start = read_os_timer();
                     space_manager_focus_space(sid);
-                    for (int i = 0; i < 25 && !space_is_visible(sid); ++i) {
-                        usleep(20000);
-                    }
-                    if (!space_is_visible(sid)) {
+                    if (!space_manager_wait_until_visible(sid, wait_start, 500)) {
                         daemon_fail(rsp, "destination space is still animating.\n");
                         return;
                     }
