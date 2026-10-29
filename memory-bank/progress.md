@@ -1,6 +1,6 @@
 # Progress - yabai
 
-## Current Phase: 7.2.20 复审修复 ✅ 源码完成，待提交 (2026-10-29)
+## Current Phase: 7.2.21 deploy default ✅ 源码完成，待提交 (2026-10-30)
 
 ---
 
@@ -15,7 +15,7 @@
 - 2026-10-29 18:53 基线恢复：安装 7.2.18 / OSAX 2.1.41，源码 diff 空，系统与 space 查询正常
 - 2026-10-29 native fast landing v2（已部署）：窗口可见性驱动，直接 focus space + focus window；编译通过 7.2.18
 - 2026-10-29 v2 实测：fast front switch result=0、SPACE_CHANGED 正常，但 WindowServer 滑动仍存在；ReduceMotionEnabled=1 也无效；决策：保留 fast landing，接受滑动
-- 2026-10-29 7.2.20 复审修复：fast landing 移到窗口解析后；移除 pending 拦截；effective sticky helper；分离 skip/fast 文档；tests 4/4；构建 0 warning；运行时待用户重启验证（7.2.19 已由用户确认无动画）；ai-base 87d35c7/d96ed38/3089347/a710a3c，dev fa4893a/4741e79/95c2f88，master 2d10a3f/32bbbdf/5e7d2db；origin 一致
+- 2026-10-29 7.2.20 复审修复：fast landing 移到窗口解析后；移除 pending 拦截；effective sticky helper；分离 skip/fast 文档；tests 4/4；构建 0 warning；ai-base 87d35c7/d96ed38/3089347/a710a3c，dev fa4893a/4741e79/95c2f88，master 2d10a3f/32bbbdf/5e7d2db；2026-10-30 7.2.21 deploy：make deploy 写 auto-swoosh=0 并重启 Dock；ai-base 928c024/9088d9c，AI 专属，不 cherry-pick；AI 记录本次提交推送；dev/master 有旧 target，无 7.2.21 改动
 
 ### Phase 45: REA/Ghidra provider + reverse-engineering skill v3 ✅ (2026-10-29)
 - `reverse-engineering` SKILL v3：任何 rea 调用前强制加载 `reverse-engineer-anything`；明确 REA 技能 + 当前 `tools/list` 优先
@@ -93,7 +93,7 @@
 
 | 文件 | 行数 | 限制 | 状态 |
 |------|------|------|------|
-| activeContext.md | 94 | 150 | ✅ |
+| activeContext.md | 95 | 150 | ✅ |
 | progress.md | 100 | 100 | ✅ |
 | systemPatterns.md | 63 | 80 | ✅ |
 | techContext.md | 73 | 80 | ✅ |

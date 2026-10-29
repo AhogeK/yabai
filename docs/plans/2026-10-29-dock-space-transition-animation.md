@@ -63,6 +63,14 @@ incident was 7.2.18 / OSAX 2.1.41; the current source is 7.2.20.
   then raced fast landing and produced intermittent animation. The setting is
   back to `0`; Dock restarted at 22:10 and the user confirmed hidden-space app
   switching now has no animation.
+- 7.2.21: `make deploy` sets `com.apple.dock workspaces-auto-swoosh`
+  to `0` after the accessibility step and restarts Dock before loading SA.
+- 7.2.21 deploy-only commits: ai-base `928c024` (deploy/docs) and
+  `9088d9c` (version 7.2.21); this deploy target is AI-branch-only and is
+  not cherry-picked to dev/master.
+- The 7.2.21 AI record is committed and pushed on ai-base only.
+- dev and master still contain the older 1/6 deploy target; neither contains
+  the 7.2.21 Dock-default step.
 - No further WindowServer privileged debugging.
 
 ## Semantics (2026-10-29)
