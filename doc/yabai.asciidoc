@@ -176,9 +176,14 @@ Global Settings
     Windows will keep their zoom-state through layout changes.
 
 *skip_window_focus_animation* ['<BOOL_SEL>']::
-    Bypass macOS space animation when an application or window on an inactive space is focused. +
-    You should only enable this if you do NOT use the scripting addition. +
-    The scripting addition implements the same functionality in a more robust way.
+    Bypass the synthetic gesture used when a window on an inactive space is focused. +
+    This option does not control application front-switch fast landing; use `fast_window_switch` for that path. +
+    You should only enable this if you do NOT use the scripting addition; the scripting addition implements the same functionality in a more robust way.
+
+*fast_window_switch* ['<BOOL_SEL>']::
+    Focus the target window directly after an application on an inactive space becomes frontmost. +
+    With the scripting addition this avoids the extra focus delay without posting a synthetic gesture; without the scripting addition it falls back to the gesture path. +
+    Enabled by default. Disable it when another component owns application or space switching, or when focus bounces between two applications.
 
 *window_shadow* ['<BOOL_SEL>|float']::
     Draw shadow for windows. +

@@ -245,11 +245,20 @@ Windows will keep their zoom\-state through layout changes.
 .sp
 \fBskip_window_focus_animation\fP [\fI<BOOL_SEL>\fP]
 .RS 4
-Bypass macOS space animation when an application or window on an inactive space is focused.
+Bypass the synthetic gesture used when a window on an inactive space is focused.
 .br
-You should only enable this if you do NOT use the scripting addition.
+This option does not control application front\-switch fast landing; use \f(CRfast_window_switch\fP for that path.
 .br
-The scripting addition implements the same functionality in a more robust way.
+You should only enable this if you do NOT use the scripting addition; the scripting addition implements the same functionality in a more robust way.
+.RE
+.sp
+\fBfast_window_switch\fP [\fI<BOOL_SEL>\fP]
+.RS 4
+Focus the target window directly after an application on an inactive space becomes frontmost.
+.br
+With the scripting addition this avoids the extra focus delay without posting a synthetic gesture; without the scripting addition it falls back to the gesture path.
+.br
+Enabled by default. Disable it when another component owns application or space switching, or when focus bounces between two applications.
 .RE
 .sp
 \fBwindow_shadow\fP [\fI<BOOL_SEL>|float\fP]
