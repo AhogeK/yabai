@@ -1,8 +1,11 @@
-# Plan: macOS 原生全屏「记忆还原」（空间 + 分屏侧别）
+# Plan: macOS 原生全屏「记忆还原」（已退役）
 > 修正记录二（2026-10-10，事故后）：`space_window_list()` 返回 `ts_alloc_*` **临时池**指针（`src/misc/ts.h`），对它 `free()` 会触发 libmalloc abort → daemon 被 launchd 反复拉起。修正版已删除全部 `free()`；并把 `space_manager_find_view`（会自动建 view）换成只读的 `space_manager_query_view`，避免为已销毁空间创建空 view。新增静态护栏：全仓库扫描"`space_window_list` 结果被 free"。
 
+> **Status: retired (2026-10-30)**。macOS 更新后系统已能把窗口放回来源空间；本计划对应的
+> `fullscreen_restore` / `view_follow` 代码已在 7.2.22（`9916eeb` / `c70160c`）删除。以下内容仅保留为历史证据。
+
 > 修正记录（2026-10-10 实施中）：侧别捕获原计划读 `window->windowed_frame`，实测该字段仅由 yabai 自己的全屏切换维护，系统原生全屏（视频通话）路径下是陈旧值 → 改为滚动几何记忆，结论已就地更新。
-Date: 2026-10-10 · Status: draft · 执行者：本会话（用户授权自行决策并实施）
+Date: 2026-10-10 · Status: retired (2026-10-30) · 执行者：本会话（用户授权自行决策并实施）
 
 ## Objective
 

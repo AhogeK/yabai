@@ -1,7 +1,7 @@
 # scenarios — 触发场景 → 判断 → 动作
 
 > **系统基线**：macOS 27.2 (26B123) · Dock 2571.1.32.402 · WindowManager 462.1.41.404
-> **最后验证**：2026-10-29 · **状态**：已验证（S1/S8/S10 + 27.2 全功能实测）；7.2.20 fast landing 为源码/单测结论，**运行时待验证**
+> **最后验证**：2026-10-30 · **状态**：已验证（S1/S8/S11 + 27.2 全功能实测）；S10 已退役；7.2.20 fast landing 为源码/单测结论，**运行时待验证**
 > **来源**：S1 排查顺序与 27.2 行为实测；S4（ivar 改名）与 S6 为推论，待实测
 
 ## S1. `yabai -m space --create` 无效果
@@ -69,74 +69,16 @@ E [com.apple.windowmanagement:login] No visible space found for display: 37D8832
 
 **验证（2026-10-23 15:52）**：`defaults delete com.apple.spaces` + `killall cfprefsd` + 注销/重启后，模型重建为每显示器 1 个空间（`order [1] / [6] / [7]`，`query --spaces` count=unique=3），壁纸恢复。删除后 plist 变成 42 字节空壳（`{}`）属正常，不是删除失败。
 
-## S10. 原生全屏退出后窗口跑到该显示器第一个桌面（27.0.1 实测，系统侧）
+## S10. 原生全屏退出后窗口跑到该显示器第一个桌面（已退役）
 
-**现象**：某显示器有多个桌面，窗口在 desktop 2/3，进入原生全屏（如视频通话）后退出 → **窗口与该显示器一起回到 desktop 1**。
+> macOS 更新后系统已修复该行为；yabai 7.2.22 已删除 `fullscreen_restore` 与
+> `view_follow` workaround。保留此标题仅供历史检索。
 
-**取证方法**（daemon 日志必须已开：`yabai -m config debug_output on`；注意 daemon 经 launchd 的 stdout 若被删过会写进已删除 inode → 需 `yabai --restart-service` 恢复）：
+## S10.1 Front-switch script contract（独立于已退役 workaround）
 
-```bash
-grep -nE "SPACE_DESTROYED|SPACE_CREATED|SPACE_CHANGED:|DAEMON_MESSAGE" /tmp/yabai_<user>.out.log | grep -v MOUSE
-```
-
-**实测时间线（2026-10-10）**：
-
-```
-DAEMON_MESSAGE: space --focus 2        ← 你的 front-switch 脚本（只切视图）
-SPACE_CHANGED: 58                      ← id58 = display1 index2
-... 全屏：SPACE_CHANGED: 1526           ← 全屏空间
-SPACE_CHANGED: 50                      ← 退出全屏后系统直接切回 id50 = display1 index1
-```
-**关键**：58 → 50 这一步前后**没有任何 `window --space` 命令**。
-
-**责任面（yabai 侧可能性已穷举）**：
-
-| 路径 | 结论 |
-|---|---|
-| `window --space` 命令（`window_manager_send_window_to_space`） | 日志中未出现；且它只有两个调用者：message.c 的命令处理 + 规则（`apply_rule_effects`） |
-| 规则指派空间 | 你的 yabairc 无 space 效果规则 |
-| daemon 自动指派 | `space_manager_assign_process_to_space` / `..._to_all_spaces` 是**死代码**（无调用者） |
-| SA 侧 | SA 只有 create/destroy/focus（space）与 focus（window），**没有"移动窗口到空间"的 opcode** |
-| `SLS_SPACE_DESTROYED` / `view_destroy` | 只清理 yabai 内部模型，不碰系统窗口 |
-
-→ **观察结论**：窗口回到 desktop 1 是系统在全屏空间销毁后的恢复结果；yabai 未发出任何搬移指令。
-
-**处置**：属 macOS 侧（与 S9 的 `com.apple.spaces.plist` 布局损坏同属"系统空间恢复"问题 `[INFERENCE]`）；如需在 yabai 侧做绕过，需要在全屏空间创建时记住来源空间、销毁后把窗口送回——那是行为 hack，需用户明确同意。
-
-**yabai 侧绕过（7.2.0 送窗口 / 7.2.2 视图跟随，2026-10-10）**
-
-7.2.0 把窗口送回来源空间；视图跟随的第一版（7.2.1）用"重试抢回"，实测被否——**反复闪回**，且会与用户操作互相放大。
-
-**归因证据**（2026-10-10 实测）：每一次 `SPACE_CHANGED: 50` 之前都紧跟一条客户端命令——
-
-```
-EVENT_HANDLER_DAEMON_MESSAGE: space --focus 1     ← 外部命令（front-switch 脚本或按键）
-EVENT_HANDLER_SPACE_CHANGED: 50                    ← 它的效果
-```
-
-"切回第一个桌面"因此不是系统偷偷复位，而是**外部驱动**；daemon 自己调 `space_manager_focus_space()` 不会产生 `DAEMON_MESSAGE`，可据此区分两者。
-
-**现设计（7.2.5）**：
-
-| 规则 | 为什么 |
-|---|---|
-| 还原时只登记**一次**跟随意图（`view_follow_sid` + 待聚焦窗口） | 反复抢回 = 反复闪 |
-| 空间变化时**只聚焦被还原的窗口**（`view_follow_focus_window()`），不切桌面 | 抢着切会插进用户 front-switch 脚本的判断窗口，脚本会再判一次并把视图拉回 → 来回跳 |
-| 只有**没人**切视图时，yabai 才在 0.4 秒后补切一次（`view_follow_fire()`） | 兜底，通常因目标已可见而无动作 |
-| 收到外部 `space …` 或 `window --focus/--space/--display` 命令 → **立刻放弃** | 用户/脚本在操作时绝不插手 |
-| 目标已可见 / 超期 / 目标空间被销毁 → 安静退出 | 不做无谓动画 |
-
-**被否掉的两版**（别再走回头路）：7.2.3/7.2.4 的"收到系统空间变化就立刻切"会与外部脚本互相放大；7.2.2 的"固定等 0.5 秒安静"对用户太慢。
-
-**用户脚本侧被否掉的尝试**：加 `sleep 0.15` + "可见空间 1 秒内变过就跳过" → 实测**卡顿感**且**漏跳**（用户切 app 刚好紧跟在切桌面之后时被跳过）。正确分工是：yabai 只管窗口，视图交给脚本的即时路径。
-
-**`~/.config/yabai/window_focused_event_script.sh` 最终形态（2026-10-10）**——与最初版本**只差一条规则**：可见性看【整个 app】（原版只看 `.[0]`＝创建最早的窗口，会在别桌面留着更早窗口时把你从当前桌面切走）；其余全部沿用最初：目标窗口 `.[0]`、`space --focus` + `sleep 0.1` + `window --focus`、**一次 `jq`**。
-
-**聚焦时序（用户说明，2026-10-10，勿改）**：切桌面靠 `space --focus`；随后的 `window --focus` **不是为了切桌面**，而是因为目标桌面上可能有多个窗口，切换后**由 macOS 决定落在哪个 app 上**，不一定是想要的那个，所以必须显式再聚焦一次。`sleep 0.1` 是等切换过渡，属该设计的一部分。
-
-> 我曾把它改成「立刻聚焦 + 0.3 秒后补一次」，被用户否掉并回退（2026-10-10）；动作三行保持与原版逐字一致。
-
-**手感对齐证据**（影子 yabai，各 10 次）：最初 132 ms / 现在 130 ms；逐行结构差异仅 jq 过滤器与 `-n "$target_space"` 判断。**被否掉的三处改动**：① `sleep 0.15` + "空间刚变就跳过" → 卡顿 + 漏跳；② 拆两次 `jq` → +9 ms（中位 140 vs 131）；③ 目标窗口"优先 has-focus" → 跳向的窗口与最初不同（实测不可见窗口 has-focus 基本为 false，收益存疑）。备份仍在同目录 `window_focused_event_script.sh.bak`。
+- `~/.config/yabai/window_focused_event_script.sh` 仍按“整个 app 是否有可见窗口”判断，目标窗口取 `.[0]`，一次 `jq` 查询。
+- 动作顺序保持 `space --focus` → `sleep 0.1` → `window --focus`；`sleep 0.1` 是等切换过渡，不能删除或改成“空间刚变就跳过”。
+- 实测手感约 130–132 ms；不要加 `sleep 0.15`，也不要拆成两次 `jq`，两者分别造成卡顿/漏跳和额外延迟。
 
 ## S11. 焦点切换出现桌面横移动画（macOS 27.2，所有焦点来源）
 

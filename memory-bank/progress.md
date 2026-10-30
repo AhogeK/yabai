@@ -1,6 +1,6 @@
 # Progress - yabai
 
-## Current Phase: 7.2.21 deploy default ✅ 源码完成，待提交 (2026-10-30)
+## Current Phase: 7.2.22 fullscreen workaround retired ✅ 已提交，待同步 (2026-10-30)
 
 ---
 
@@ -15,7 +15,8 @@
 - 2026-10-29 18:53 基线恢复：安装 7.2.18 / OSAX 2.1.41，源码 diff 空，系统与 space 查询正常
 - 2026-10-29 native fast landing v2（已部署）：窗口可见性驱动，直接 focus space + focus window；编译通过 7.2.18
 - 2026-10-29 v2 实测：fast front switch result=0、SPACE_CHANGED 正常，但 WindowServer 滑动仍存在；ReduceMotionEnabled=1 也无效；决策：保留 fast landing，接受滑动
-- 2026-10-29 7.2.20 复审修复：fast landing 移到窗口解析后；移除 pending 拦截；effective sticky helper；分离 skip/fast 文档；tests 4/4；构建 0 warning；ai-base 87d35c7/d96ed38/3089347/a710a3c，dev fa4893a/4741e79/95c2f88，master 2d10a3f/32bbbdf/5e7d2db；2026-10-30 7.2.21 deploy：make deploy 写 auto-swoosh=0 并重启 Dock；ai-base 928c024/9088d9c，AI 专属，不 cherry-pick；AI 记录本次提交推送；dev/master 有旧 target，无 7.2.21 改动
+- 2026-10-29 7.2.20 复审修复：fast landing 移到窗口解析后；移除 pending 拦截；effective sticky helper；分离 skip/fast 文档；tests 4/4；构建 0 warning；ai-base 87d35c7/d96ed38/3089347/a710a3c，dev fa4893a/4741e79/95c2f88，master 2d10a3f/32bbbdf/5e7d2db；2026-10-30 7.2.21 deploy：make deploy 写 auto-swoosh=0 并重启 Dock；ai-base 928c024/9088d9c，AI 专属，不 cherry-pick；AI 记录已推送
+- 2026-10-30 7.2.22：macOS 更新后系统已修复全屏退出落点；删除 fullscreen_restore/view_follow workaround；tests 4/4，build 0 warning；运行时全屏未再测（用户报告 macOS 已修复）；ai-base code 9916eeb / version c70160c
 
 ### Phase 45: REA/Ghidra provider + reverse-engineering skill v3 ✅ (2026-10-29)
 - `reverse-engineering` SKILL v3：任何 rea 调用前强制加载 `reverse-engineer-anything`；明确 REA 技能 + 当前 `tools/list` 优先
@@ -47,18 +48,8 @@
 - 修复：`src/osax/payload.m` create 传 `CFUUIDCreate` 新 UUID + 落点显示器校验；版本 7.2.5→7.2.6，OSAX 2.1.33→2.1.34
 - 状态：编译 0 警告；已部署实测（新空间 uuid 唯一）+ 清理旧模型后重启验证通过（15:52，order [1]/[6]/[7]）
 
-### Phase 40: 原生全屏还原 —— 送窗口 + 视图跟随 ✅ (2026-10-10)
-- 背景：27.0.1 全屏退出后窗口与视图都落到该显示器第一个桌面（`domains/space-management/scenarios.md` S10）
-- 7.2.0：进全屏记来源空间（+分屏侧），全屏空间销毁后送回；含一次崩溃事故——对 `space_window_list()` 池内存 `free()` → libmalloc abort，已移除 free（2 处）
-- 7.2.1：视图跟随第一版（重试抢回）→ **实测否掉**：日志显示每次切回第一个桌面都是外部 `space --focus` 命令，重试与它互相放大成反复闪回
-- 7.2.2：只切一次——登记意图 + 等 0.5 秒安静 + 外部空间/窗口命令立即放弃（实测可用但**太慢**：要在 desktop1 等一会）
-- 7.2.3：改**事件驱动**（系统那条 `SPACE_CHANGED` 即"复位完成"信号）→ 实测仍落 desktop1：我们的切换早于系统的空间变化被覆盖，且切完后前台 app 是 cmux，用户的 front-switch 脚本（取 app 的**第一个窗口**）把视图拉回 desktop1
-- 7.2.4 实测暴露循环：我们的切换 → yabai 为被切到前台的 cmux 再发一次 front-switch → 用户的 `window_focused_event_script.sh` 把视图拉回 desktop1（其 `.[0]` 语义 + 空间动画误判）；已修脚本：等动画落定 + 「可见空间 1 秒内刚变过就跳过」+ 整 app 可见性判断（用户授权，备份 `.bak`）
-- 7.2.4：兜底 0.8 → **2 秒**（不抢在系统前面）+ 切换后 150 ms **聚焦被还原的窗口**（前台 app 变成 Discord 且窗口在同桌面，外部脚本无事可做）+ 日志加毫秒时间戳
-- 7.2.5：不再由 yabai 切桌面（抢切会插进用户 front-switch 脚本的判断窗口 → 来回跳）；只聚焦被还原窗口，视图交给脚本即时路径，只有没人切时 0.4 秒后兜底补切。脚本侧回滚掉 `sleep 0.15` + "空间刚变就跳过"（实测卡顿 + 漏跳）
-- 版本：7.2.0 → 7.2.1 → 7.2.2 → 7.2.3 → 7.2.4 → **7.2.5**（OSAX_VERSION 不变）；编译 0 告警 0 错误
-- 分支同步：补齐 dev/master 缺失的 `#2780 implement` 与 `#2217`（内容回到与 ai-base 一致），普通推送 dev `83c7916` / master `70e084b`
-- 状态：✅ 已实测通过（退出全屏效果 OK、无新崩溃）+ 已提交推送（ai-base 6115f7b / dev 4e39363 / master 6c8152e，7.2.5）
+### Phase 40: 原生全屏还原 workaround（已退役，2026-10-30）
+- 7.2.0–7.2.5 的 fullscreen_restore / view_follow workaround 已删除；macOS 更新后系统已返回来源空间；历史证据保留在已退役的 `docs/plans/2026-10-10-fullscreen-restore.md`。
 
 > Phase 39（macOS 27 SA 修复）已归档至 `archive/progress-2026-09.md`。
 
@@ -93,8 +84,8 @@
 
 | 文件 | 行数 | 限制 | 状态 |
 |------|------|------|------|
-| activeContext.md | 95 | 150 | ✅ |
-| progress.md | 100 | 100 | ✅ |
+| activeContext.md | 96 | 150 | ✅ |
+| progress.md | 91 | 100 | ✅ |
 | systemPatterns.md | 63 | 80 | ✅ |
 | techContext.md | 73 | 80 | ✅ |
 | projectbrief.md | 22 | 50 | ✅ |

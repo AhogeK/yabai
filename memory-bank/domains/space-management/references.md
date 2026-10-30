@@ -1,7 +1,7 @@
 # references — 空间 API 与实现对照表
 
 > **系统基线**：macOS 27.2 (26B123) · Dock 2571.1.32.402 · WindowManager 462.1.41.404
-> **最后验证**：2026-10-29 · **状态**：已验证（真机 create/focus/move/排序/destroy）；7.2.20 fast landing 表格为源码/单测结论，**运行时待验证**
+> **最后验证**：2026-10-30 · **状态**：已验证（真机 create/focus/move/排序/destroy）；7.2.20 fast landing 表格为源码/单测结论，**运行时待验证**
 > **来源**：`src/osax/payload.m` 调用形态 + 27.2 运行日志
 
 ## daemon → SA 能力对照
@@ -92,15 +92,10 @@ yabai 的两个序号函数（`src/space_manager.c`）：`space_manager_mission_
 | **27.0** | **Dock 内部 helper `0x2bb62c`（G3′）**；`WindowManager.framework` 的 `synchronouslyRequestCreateManagedSpace`（G3，断言门不可用） | Dock `removeSpace`（0x18b9a0） | Dock `moveSpace`（0x18c554） | 27.0 实测可用；27.2 重编译后失效 |
 | **27.2** | **Dock helper `0x20ce00`（构建锁定 + 段校验）** | `CGSSpaceDestroy` | `CGSMoveManagedSpaceToDisplayIndex` / `SLSTransaction*` | 旧 pattern 全 0 命中；`remove_space` 伪命中 0x12dbcc |
 
-## 全屏还原状态（daemon 内部，7.2.x）
+## 空间可见性 helper
 
-| 项 | 位置 | 说明 |
-|---|---|---|
-| `pending_fullscreen_sid` / `pending_fullscreen_src_sid` | `window_manager` | 已捕获的全屏空间与其来源空间 |
-| `view_follow_sid` / `view_follow_window_id` / `view_follow_generation` / `view_follow_abort` | `window_manager` | 视图跟随意图：目标空间 / 待聚焦窗口 / 世代号（作废兜底定时器）/ 放弃标记 |
-| `VIEW_FOLLOW_FALLBACK_SECONDS` / `VIEW_FOLLOW_FOCUS_DELAY_SECONDS` | `window_manager.h` | 0.4 秒兜底补切 / 150 ms 后聚焦窗口 |
-| `window_manager_arm_view_follow()` / `_view_follow_on_space_change()` / `_view_follow_focus_window()` / `_abort_view_follow()` / `_view_follow_fire()` / `_view_follow_window()` | `window_manager.c` | 登记 / 空间变化只聚焦窗口 / 排延迟聚焦 / 让位 / 兜底补切（事件循环线程）/ 聚焦窗口 |
-| `VIEW_FOLLOW` / `VIEW_FOLLOW_WINDOW` 事件 | `event_loop.h` 类型表 + `event_loop.c` 处理器 | 把两步从主线程投递到事件循环线程 |
-| `space_is_visible(sid)` | `space.h` 声明 / `space.c` 内联 | `sid == display_space_id(space_display_id(sid))`，按该空间所属显示器判断 |
+| API | 说明 |
+|---|---|
+| `space_is_visible(sid)` | `space.h` 声明 / `space.c` 内联；`sid == display_space_id(space_display_id(sid))`，按该空间所属显示器判断 |
 
 入口地址/基线与单例全局见 `dock-reverse-engineering/references.md`。
