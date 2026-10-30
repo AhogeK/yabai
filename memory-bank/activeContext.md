@@ -25,7 +25,7 @@
 - 7.2.20（复审修复，源码已提交）：fast landing 在 `applications_to_refresh` 解析后执行；移除 `__pending_window_focus` 拦截；sticky 判断抽成 `window_is_sticky_effective`；分离 `skip`/`fast` 文档并注明无 SA 的 gesture fallback；tests 4/4；构建 0 warning
 - 2026-10-30：R22 增加 Dock 设置生效检查；7.2.20 复审修复已完成源码、测试与文档，运行时待用户重启验证
 - 7.2.21（deploy default，AI 分支专属，已提交）：`make deploy` 在 Accessibility 步骤后写入 `workspaces-auto-swoosh=0` 并重启 Dock，随后加载 SA/启动服务；版本 7.2.21，tests 4/4，build 0 warning；README/CHANGELOG/man 已同步；ai-base `928c024`（deploy/docs）/`9088d9c`（version）；dev/master 仍有旧 deploy target，但无 7.2.21 改动
-- 7.2.22（cleanup，已提交 ai-base）：macOS 更新后系统已修复全屏退出落点，删除 `fullscreen_restore` / `view_follow` workaround；tests 4/4，build 0 warning；运行时全屏未再测（用户报告 macOS 已修复）；code `9916eeb` / version `c70160c`
+- 7.2.22（cleanup，已提交 ai-base/dev/master）：macOS 更新后系统已修复全屏退出落点，删除 `fullscreen_restore` / `view_follow` workaround；tests 4/4，build 0 warning；code `9916eeb` / version `c70160c`；dev `581aa39`/`c944278`；master `3f8cdfe`/`09ba6a6`；AI `5685751`；三支本次推送
 - 2026-10-30 发布提交：ai-base `87d35c7`（code）/`d96ed38`（docs）/`3089347`（7.2.20）/`a710a3c`（AI）；dev `fa4893a`/`4741e79`/`95c2f88`；master `2d10a3f`/`32bbbdf`/`5e7d2db`；origin 三支一致，工作树 clean
 - 实测：直接 `space --focus` 无横移；最终配置下用户确认无问题；仍需长期观察
 - 计划：`docs/plans/2026-10-29-macos27-iohid-gesture.md`（completed）

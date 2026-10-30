@@ -16,7 +16,7 @@
 - 2026-10-29 native fast landing v2（已部署）：窗口可见性驱动，直接 focus space + focus window；编译通过 7.2.18
 - 2026-10-29 v2 实测：fast front switch result=0、SPACE_CHANGED 正常，但 WindowServer 滑动仍存在；ReduceMotionEnabled=1 也无效；决策：保留 fast landing，接受滑动
 - 2026-10-29 7.2.20 复审修复：fast landing 移到窗口解析后；移除 pending 拦截；effective sticky helper；分离 skip/fast 文档；tests 4/4；构建 0 warning；ai-base 87d35c7/d96ed38/3089347/a710a3c，dev fa4893a/4741e79/95c2f88，master 2d10a3f/32bbbdf/5e7d2db；2026-10-30 7.2.21 deploy：make deploy 写 auto-swoosh=0 并重启 Dock；ai-base 928c024/9088d9c，AI 专属，不 cherry-pick；AI 记录已推送
-- 2026-10-30 7.2.22：macOS 更新后系统已修复全屏退出落点；删除 fullscreen_restore/view_follow workaround；tests 4/4，build 0 warning；运行时全屏未再测（用户报告 macOS 已修复）；ai-base code 9916eeb / version c70160c
+- 2026-10-30 7.2.22：macOS 更新后系统已修复全屏退出落点；删除 fullscreen_restore/view_follow workaround；tests 4/4，build 0 warning；ai-base 9916eeb/c70160c/5685751，dev 581aa39/c944278，master 3f8cdfe/09ba6a6；三支本次推送
 
 ### Phase 45: REA/Ghidra provider + reverse-engineering skill v3 ✅ (2026-10-29)
 - `reverse-engineering` SKILL v3：任何 rea 调用前强制加载 `reverse-engineer-anything`；明确 REA 技能 + 当前 `tools/list` 优先

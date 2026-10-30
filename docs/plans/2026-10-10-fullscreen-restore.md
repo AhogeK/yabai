@@ -3,6 +3,8 @@
 
 > **Status: retired (2026-10-30)**。macOS 更新后系统已能把窗口放回来源空间；本计划对应的
 > `fullscreen_restore` / `view_follow` 代码已在 7.2.22（`9916eeb` / `c70160c`）删除。以下内容仅保留为历史证据。
+- 7.2.22 branch sync: ai-base `9916eeb`/`c70160c`/`5685751`,
+  dev `581aa39`/`c944278`, master `3f8cdfe`/`09ba6a6`.
 
 > 修正记录（2026-10-10 实施中）：侧别捕获原计划读 `window->windowed_frame`，实测该字段仅由 yabai 自己的全屏切换维护，系统原生全屏（视频通话）路径下是陈旧值 → 改为滚动几何记忆，结论已就地更新。
 Date: 2026-10-10 · Status: retired (2026-10-30) · 执行者：本会话（用户授权自行决策并实施）
