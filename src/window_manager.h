@@ -71,39 +71,6 @@ struct scratchpad
     struct window *window;
 };
 
-// Fullscreen-restore memory.
-//
-// Entering a native fullscreen space makes macOS move the window into a space of its own;
-// when that space goes away the system drops the window back onto the display's *first*
-// user space instead of the one it came from (macOS 27.0.1, see docs/plans). We remember
-// where the window came from (and which side of its split it occupied) so it can be put
-// back. Entries are short-lived: they are dropped on restore, on window destruction, when
-// the source space disappears, or by the oldest-first cap below.
-struct fullscreen_restore_entry {
-    uint32_t window_id;
-    uint32_t neighbour_id;   // the other window in the source view (0 when not exactly one)
-    uint64_t src_sid;        // user space the window came from
-    uint8_t  was_after;      // 1 when the window sat right/below of neighbour_id
-};
-
-#define FULLSCREEN_RESTORE_MAX 8
-
-// Rolling geometry memory.
-//
-// The side a window occupies cannot be recovered once it has left its view, and
-// window->windowed_frame is only maintained by yabai's *own* fullscreen toggle (not by the
-// system's native fullscreen, which is what the video-call case uses). So the geometry is
-// recorded while the window is still sitting in a user space: source space, sibling window
-// and side. Entering fullscreen copies the record into the restore entry above.
-struct window_geometry_memory {
-    uint32_t window_id;
-    uint32_t neighbour_id;
-    uint64_t sid;
-    uint8_t  was_after;
-};
-
-#define GEOMETRY_MEMORY_MAX 16
-
 struct window_manager
 {
     AXUIElementRef system_element;
@@ -133,24 +100,6 @@ struct window_manager
     int window_animation_easing;
     struct rgba_color insert_feedback_color;
     struct scratchpad *scratchpad_window;
-
-    struct fullscreen_restore_entry fullscreen_restore[FULLSCREEN_RESTORE_MAX];
-    int fullscreen_restore_count;
-    // A native fullscreen transition reports the space change before the window shows up in
-    // that space's window list, so remember the pair and retry on later window events.
-    uint64_t pending_fullscreen_sid;
-    uint64_t pending_fullscreen_src_sid;
-    // The view follows the restored window with a single switch, made only once the space churn
-    // of the exit has settled. Switching during that churn - or re-asserting after it - produces a
-    // visible back-and-forth with whatever else is switching spaces, so the switch is deferred
-    // while space changes keep arriving, dropped if anything else switches spaces, and never
-    // repeated.
-    uint64_t view_follow_sid;
-    uint32_t view_follow_window_id;
-    int view_follow_generation;
-    bool view_follow_abort;
-    struct window_geometry_memory geometry_memory[GEOMETRY_MEMORY_MAX];
-    int geometry_memory_count;
 };
 
 void window_manager_query_window_rules(FILE *rsp);
@@ -263,24 +212,5 @@ void window_manager_correct_for_mission_control_changes(struct space_manager *sm
 void window_manager_handle_display_add_and_remove(struct space_manager *sm, struct window_manager *wm, uint32_t did);
 void window_manager_begin(struct space_manager *sm, struct window_manager *wm);
 void window_manager_init(struct window_manager *wm);
-void window_manager_note_fullscreen_entry(struct window_manager *wm, uint64_t fullscreen_sid, uint64_t src_sid);
-void window_manager_remember_geometry(struct space_manager *sm, struct window_manager *wm, uint64_t sid);
-void window_manager_restore_fullscreen_entries(struct space_manager *sm, struct window_manager *wm);
-void window_manager_retry_fullscreen_entry(struct window_manager *wm);
-void window_manager_arm_view_follow(struct window_manager *wm, uint64_t sid, uint32_t window_id);
-void window_manager_view_follow_on_space_change(struct window_manager *wm, uint64_t new_sid);
-void window_manager_abort_view_follow(struct window_manager *wm);
-void window_manager_view_follow_fire(struct window_manager *wm, int generation);
-void window_manager_view_follow_focus_window(struct window_manager *wm, uint32_t window_id);
-void window_manager_view_follow_window(struct window_manager *wm, uint32_t window_id);
-
-// Fallback, used only when nothing switches the view at all after a restore: the single switch is
-// normally made the moment the exit's own space change lands.
-#define VIEW_FOLLOW_FALLBACK_SECONDS 0.4f
-// The system takes a moment to finish the space switch; focusing the window right away would be
-// dropped while the display is animating (the same reason the signal scripts sleep before it).
-#define VIEW_FOLLOW_FOCUS_DELAY_SECONDS 0.15f
-void window_manager_forget_fullscreen_entry(struct window_manager *wm, uint32_t window_id);
-void window_manager_forget_fullscreen_entries_on_space(struct window_manager *wm, uint64_t sid);
 
 #endif
