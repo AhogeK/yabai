@@ -57,7 +57,7 @@ fi
 
 AUTHOR="asmvik"
 NAME="yabai"
-VERSION="7.2.21"
+VERSION="7.2.22"
 # Refreshed by `make publish` after the release archive is built.
 EXPECTED_HASH="946d0915a7acb3db0b102899311fa086cfd4837cf3e24bae4d955bdebecc395b"
 TMP_DIR="./${AUTHOR}-${NAME}-v${VERSION}-installer"

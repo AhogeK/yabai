@@ -1,3 +1,7 @@
+## [7.2.22] - 2026-10-30
+### Removed
+- Removed the macOS 27.0.1 native-fullscreen restore workaround, including its window/space memory and view-follow events. Current macOS returns the window to its source space, so native fullscreen handling remains without the workaround
+
 ## [7.2.21] - 2026-10-30
 ### Changed
 - `make deploy` now disables Dock window-order follow and restarts Dock after the accessibility step, so a fresh Mac finishes deployment in the supported default state: `fast_window_switch` on, `skip_window_focus_animation` off, `workspaces-auto-swoosh` off
