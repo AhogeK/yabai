@@ -10,6 +10,7 @@ extern struct space_manager g_space_manager;
 extern struct window_manager g_window_manager;
 extern struct mouse_state g_mouse_state;
 extern bool g_verbose;
+extern int g_connection;
 
 #define DOMAIN_CONFIG  "config"
 #define DOMAIN_DISPLAY "display"
@@ -130,6 +131,7 @@ extern bool g_verbose;
 
 /* --------------------------------DOMAIN WINDOW-------------------------------- */
 #define COMMAND_WINDOW_FOCUS      "--focus"
+#define COMMAND_WINDOW_FAST_FOCUS "--fast-focus"
 #define COMMAND_WINDOW_CLOSE      "--close"
 #define COMMAND_WINDOW_MINIMIZE   "--minimize"
 #define COMMAND_WINDOW_DEMINIMIZE "--deminimize"
@@ -1150,6 +1152,72 @@ static struct selector parse_insert_selector(FILE *rsp, char **message)
     return result;
 }
 
+static bool dock_auto_swoosh_enabled(void)
+{
+    bool enabled = true;
+    CFPropertyListRef value = CFPreferencesCopyAppValue(CFSTR("workspaces-auto-swoosh"), CFSTR("com.apple.dock"));
+
+    if (value) {
+        if (CFGetTypeID(value) == CFBooleanGetTypeID()) {
+            enabled = CFBooleanGetValue((CFBooleanRef)value);
+        } else if (CFGetTypeID(value) == CFNumberGetTypeID()) {
+            int number = 0;
+            CFNumberGetValue((CFNumberRef)value, kCFNumberIntType, &number);
+            enabled = number != 0;
+        }
+        CFRelease(value);
+    }
+
+    return enabled;
+}
+
+static char *const dock_restart_argv[] = {
+    "/usr/bin/killall",
+    "Dock",
+    NULL,
+};
+
+static void *dock_restart_thread(void *context)
+{
+    (void)context;
+    safe_exec(dock_restart_argv, true);
+    return NULL;
+}
+
+static void dock_restart_async(void)
+{
+    pthread_t thread;
+    if (pthread_create(&thread, NULL, dock_restart_thread, NULL) == 0) {
+        pthread_detach(thread);
+    } else {
+        error("%s: failed to create Dock restart thread\n", __FUNCTION__);
+    }
+}
+
+static void dock_set_auto_swoosh(bool enabled)
+{
+    if (dock_auto_swoosh_enabled() == enabled) return;
+
+    CFPreferencesSetAppValue(
+        CFSTR("workspaces-auto-swoosh"),
+        enabled ? kCFBooleanTrue : kCFBooleanFalse,
+        CFSTR("com.apple.dock")
+    );
+
+    if (!CFPreferencesAppSynchronize(CFSTR("com.apple.dock"))) {
+        error("%s: failed to synchronize com.apple.dock\n", __FUNCTION__);
+    }
+
+    //
+    // Never wait for killall on the event-loop thread. The config reply must
+    // return even when Dock is slow to terminate; wait for the restart on a
+    // detached thread instead.
+    //
+    dock_restart_async();
+
+    debug("%s: set workspaces-auto-swoosh=%d and scheduled Dock restart\n", __FUNCTION__, enabled);
+}
+
 static void handle_domain_config(FILE *rsp, struct token domain, char *message)
 {
     TIME_FUNCTION;
@@ -1281,8 +1349,10 @@ static void handle_domain_config(FILE *rsp, struct token domain, char *message)
                 fprintf(rsp, "%s\n", bool_str[g_space_manager.fast_window_switch]);
             } else if (token_equals(value, ARGUMENT_COMMON_VAL_OFF)) {
                 g_space_manager.fast_window_switch = false;
+                dock_set_auto_swoosh(true);
             } else if (token_equals(value, ARGUMENT_COMMON_VAL_ON)) {
                 g_space_manager.fast_window_switch = true;
+                dock_set_auto_swoosh(false);
             } else {
                 daemon_fail(rsp, "unknown value '%.*s' given to command '%.*s' for domain '%.*s'\n", value.length, value.text, command.length, command.text, domain.length, domain.text);
             }
@@ -2056,6 +2126,154 @@ static void handle_domain_space(FILE *rsp, struct token domain, char *message)
     }
 }
 
+#define FAST_FOCUS_INPUT_COOLDOWN_NS 50000000ULL
+
+bool fast_focus_input_gate_accepts(uint64_t input_ns, uint64_t *last_input_ns)
+{
+    if (*last_input_ns == 0) {
+        *last_input_ns = input_ns;
+        return true;
+    }
+
+    if (input_ns <= *last_input_ns + FAST_FOCUS_INPUT_COOLDOWN_NS) {
+        return false;
+    }
+
+    *last_input_ns = input_ns;
+    return true;
+}
+
+static bool fast_focus_has_new_input(void)
+{
+    static uint64_t last_input_ns = 0;
+
+    //
+    // kCGAnyInputEventType is not limited to key-down and mouse-down, unlike
+    // the event counters this replaced. Use the HID source timestamp so the
+    // most recent input event decides whether a landing is allowed.
+    //
+    CFTimeInterval idle = CGEventSourceSecondsSinceLastEventType(
+        kCGEventSourceStateHIDSystemState,
+        kCGAnyInputEventType
+    );
+
+    uint64_t now_ns = (uint64_t)(CFAbsoluteTimeGetCurrent() * 1000000000.0);
+    uint64_t idle_ns = idle > 0.0 ? (uint64_t)(idle * 1000000000.0) : 0;
+    if (idle_ns > now_ns) idle_ns = now_ns;
+
+    return fast_focus_input_gate_accepts(now_ns - idle_ns, &last_input_ns);
+}
+
+struct window *fast_focus_choose_window(struct window *focused_window, struct window *fallback_window)
+{
+    return focused_window ? focused_window : fallback_window;
+}
+
+static bool window_focus_space_and_window(struct window *window)
+{
+    uint64_t sid = window_space(window->id);
+    if (sid && !space_is_visible(sid) &&
+        !window_check_flag(window, WINDOW_MINIMIZE) &&
+        !window_is_sticky_effective(window)) {
+        uint64_t wait_start = read_os_timer();
+        space_manager_focus_space(sid);
+        if (!space_manager_wait_until_visible(sid, wait_start, 500)) {
+            return false;
+        }
+    }
+
+    window_manager_focus_window_with_raise(&window->application->psn, window->id, window->ref);
+    return true;
+}
+
+static void window_fast_focus(pid_t pid)
+{
+    if (!g_space_manager.fast_window_switch) return;
+
+    struct application *application = window_manager_find_application(&g_window_manager, pid);
+    if (!application) return;
+
+    int window_count = 0;
+    struct window **window_list = window_manager_find_application_windows(&g_window_manager, application, &window_count);
+    struct window *first_standard = NULL;
+    struct window *focused_standard = NULL;
+    struct window *visible_first = NULL;
+    struct window *visible_focused = NULL;
+    uint32_t focused_window_id = application_focused_window(application);
+
+    for (int i = 0; i < window_count; ++i) {
+        struct window *window = window_list[i];
+        if (!window_is_standard(window)) continue;
+        if (window_check_flag(window, WINDOW_MINIMIZE)) continue;
+
+        bool is_focused = window->id == focused_window_id;
+
+        if (is_focused) {
+            focused_standard = window;
+        } else if (!first_standard) {
+            first_standard = window;
+        }
+
+        uint64_t sid = window_space(window->id);
+        if (!sid) continue;
+
+        uint8_t ordered_in = 0;
+        SLSWindowIsOrderedIn(g_connection, window->id, &ordered_in);
+
+        if (window_is_visible(
+                ordered_in,
+                false,
+                application->is_hidden,
+                window_is_sticky_effective(window),
+                space_is_visible(sid))) {
+            if (is_focused) {
+                visible_focused = window;
+            } else if (!visible_first) {
+                visible_first = window;
+            }
+        }
+    }
+
+    struct window *visible_target = fast_focus_choose_window(visible_focused, visible_first);
+    if (visible_target) {
+        if (!fast_focus_has_new_input()) return;
+
+        uint32_t did = window_display_id(visible_target->id);
+        debug("%s: pid=%d already visible wid=%d did=%u\n", __FUNCTION__, pid, visible_target->id, did);
+
+        //
+        // The app may already have a window on another display. The old
+        // landing path returned here and left the active display unchanged;
+        // Cmd+Tab looked like it did nothing. Focus the owning display before
+        // focusing the exact window.
+        //
+        if (did != display_manager_active_display_id()) {
+            display_manager_focus_display(did, window_space(visible_target->id));
+        }
+        window_manager_focus_window_with_raise(&application->psn, visible_target->id, visible_target->ref);
+        return;
+    }
+
+    struct window *target = fast_focus_choose_window(focused_standard, first_standard);
+    if (!target) return;
+
+    uint64_t sid = window_space(target->id);
+    if (!sid) return;
+
+    if (!fast_focus_has_new_input()) return;
+
+    debug("%s: pid=%d wid=%d sid=%llu\n", __FUNCTION__, pid, target->id, sid);
+
+    if (!space_is_visible(sid)) {
+        uint64_t wait_start = read_os_timer();
+        enum space_op_error result = space_manager_focus_space(sid);
+        if (result != SPACE_OP_ERROR_SUCCESS && result != SPACE_OP_ERROR_SAME_SPACE) return;
+        if (!space_manager_wait_until_visible(sid, wait_start, 500)) return;
+    }
+
+    window_manager_focus_window_with_raise(&application->psn, target->id, target->ref);
+}
+
 static void handle_domain_window(FILE *rsp, struct token domain, char *message)
 {
     TIME_FUNCTION;
@@ -2069,6 +2287,18 @@ static void handle_domain_window(FILE *rsp, struct token domain, char *message)
         command = get_token(&message);
     } else {
         command = selector.token;
+    }
+
+    if (token_equals(command, COMMAND_WINDOW_FAST_FOCUS)) {
+        struct token value = get_token(&message);
+        struct token_value parsed = token_to_value(value);
+        if (parsed.type != TOKEN_TYPE_INT || parsed.int_value <= 0) {
+            daemon_fail(rsp, "expected a positive process id for command '%.*s' for domain '%.*s'\n", command.length, command.text, domain.length, domain.text);
+            return;
+        }
+
+        window_fast_focus((pid_t)parsed.int_value);
+        return;
     }
 
     for (; token_is_valid(command); command = get_token(&message)) {
@@ -2094,24 +2324,10 @@ static void handle_domain_window(FILE *rsp, struct token domain, char *message)
             }
 
             if (acting_window) {
-                //
-                // NOTE: Focusing a window on a hidden space makes macOS animate the
-                // implicit space switch. Switch the space through the scripting
-                // addition first (the same path as `space --focus`) so the landing
-                // is immediate; the native switch remains the fallback.
-                //
-                uint64_t sid = window_space(acting_window->id);
-                if (sid && !space_is_visible(sid) && !window_check_flag(acting_window, WINDOW_MINIMIZE) &&
-                    !window_is_sticky_effective(acting_window)) {
-                    uint64_t wait_start = read_os_timer();
-                    space_manager_focus_space(sid);
-                    if (!space_manager_wait_until_visible(sid, wait_start, 500)) {
-                        daemon_fail(rsp, "destination space is still animating.\n");
-                        return;
-                    }
+                if (!window_focus_space_and_window(acting_window)) {
+                    daemon_fail(rsp, "destination space is still animating.\n");
+                    return;
                 }
-
-                window_manager_focus_window_with_raise(&acting_window->application->psn, acting_window->id, acting_window->ref);
             } else {
                 daemon_fail(rsp, "could not locate the window to act on!\n");
             }
