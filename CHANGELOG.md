@@ -1,3 +1,81 @@
+## [7.2.41] - 2026-11-01
+### Fixed
+- `fast_window_switch off` no longer blocks the yabai event loop while waiting for Dock to restart. The Dock restart wait now runs on a detached thread, and `off` restores `workspaces-auto-swoosh=true`; native Cmd+Tab desktop switching returns after Dock relaunches
+- `window --fast-focus` now selects the application's AX focused window before falling back to the first standard window, including the visible-window branch
+- Added coverage for the fast-focus input gate and focused-window precedence
+
+## [7.2.40] - 2026-11-01
+### Fixed
+- The `window --fast-focus` input gate now compares a single `kCGAnyInputEventType` timestamp instead of key/mouse-down counters. The gate is therefore not limited to key-down and left-mouse-down events, and it is consumed only after a target window has been selected
+
+## [7.2.39] - 2026-10-31
+### Fixed
+- `window --fast-focus` now focuses the owning display when the target application already has a visible standard window on another display. Previously it returned early, so Cmd+Tab could change the front app without moving the active desktop to that app's display. It still skips the switch when the visible window is already on the active display
+
+## [7.2.38] - 2026-10-31
+### Changed
+- Added `yabai -m window --fast-focus <pid>`. The `application_front_switched` signal action now makes a single call into the daemon instead of running shell, jq, ioreg and multiple CLI queries. The C path checks `fast_window_switch`, compares the current HID input timestamp with the previous action, selects the target standard window, switches to its space and focuses it
+
+## [7.2.37] - 2026-10-31
+### Added
+- Restored `fast_window_switch` as an opt-in config, default `off`. Setting it to `on` automatically writes `com.apple.dock.workspaces-auto-swoosh=false` and restarts Dock when the value changes; setting it to `off` restores `true`. The flag also gates a user-registered `application_front_switched` signal action, so `yabairc` can use `yabai -m config fast_window_switch on` plus `yabai -m signal --add ...` without a shell invocation. yabai does not switch Spaces from the option itself
+
+## [7.2.36] - 2026-10-31
+### Changed
+- `make deploy` no longer writes `com.apple.dock.workspaces-auto-swoosh`. Application and Space switching remain at the user's existing macOS setting; yabai does not change a system preference during deployment. The fast same-app switching observed with Opt+Shift+Tab comes from the user's skhd script, not from yabai code
+
+## [7.2.35] - 2026-10-31
+### Changed
+- Removed the `APPLICATION_FRONT_SWITCHED` fast-landing path and the `fast_window_switch` option. Cmd+Tab and Opt+Shift+Tab now both use the native window-focus/Space switch path; no app-specific branch remains. `make deploy` keeps `workspaces-auto-swoosh` enabled, so activation switches to the target Space with the normal WindowServer animation
+
+## [7.2.34] - 2026-10-31
+### Fixed
+- `make deploy` now enables Dock's native `workspaces-auto-swoosh` instead of disabling it, and `fast_window_switch` is off by default. With auto-swoosh disabled, native Cmd+Tab could activate an app on another Space without switching to it, leaving the previous window focused but keyless. The native path now switches and focuses cmux/magpie reliably across Spaces and displays; WindowServer still plays its normal Space transition animation. Fast landing remains available as an opt-in legacy path for setups that cannot enable auto-swoosh
+
+## [7.2.33] - 2026-10-31
+### Fixed
+- Fast landing now measures keyboard focus from the system-wide focused element instead of a window's `AXFocused` attribute. The active cmux window reports `AXFocused=false` while its text area owns keyboard focus, so 7.2.32's `ax_key=0` was a false negative and its conditional refocus never ran. The probe now compares the actual CGWindowID of the system-focused element's window with the target window through `_AXUIElementGetWindow`, and the refocus decision has a truth-table unit test. Landing refocuses once when either the application focus or the system keyboard focus is not the target
+
+## [7.2.32] - 2026-10-31
+### Fixed
+- Fast landing now measures the target window's real AX focus state 300 ms after the switch instead of trusting only the front process. `FAST_LAND_PROBE+300ms` gains `ax_focused`, `ax_key`, `ax_main`, and `ax_err`; when the target window is not the application's focused window, landing raises it once more. This covers the remaining case where the process is front and the space is current but the window still shows inactive traffic lights
+
+## [7.2.31] - 2026-10-31
+### Fixed
+- Fast landing now explicitly makes the target window key after its space is visible, including the case where the system already switched space before the handler ran (`target_visible=1`). It waits for `SLSWindowIsOrderedIn` before setting the target space's front PSN and raising the window, and logs `FAST_LAND_PROBE+300ms` with the visible space, ordered-in state, and front PSN for the next single-switch test
+
+## [7.2.30] - 2026-10-31
+### Fixed
+- Fast landing no longer calls `SLSSpaceSetFrontPSN` before switching space. That call made the target space's front application change first, so the previous window lost focus while the visible space stayed put. A direct `space --focus`, which skips this call, switches correctly. Landing now calls `space_manager_focus_space` and then raises the target window
+
+## [7.2.29] - 2026-10-31
+### Fixed
+- Fast landing now decides visibility from the focused target window only, not from any window of the application. A dialog or a second standard window on the current desktop no longer suppresses a landing for the focused window on another desktop. The debug line now reports the target window id, its space, and whether that exact window is visible
+
+## [7.2.28] - 2026-10-31
+### Fixed
+- Fast landing now ignores dialog and floating windows when deciding whether an app already has a visible window. cmux and magpie create AXDialog windows on the current desktop; those were counted as a visible window, so a Cmd+Tab was allowed but the main window's desktop was not switched. When an app has standard windows, only those are considered for the visible check and target selection
+
+## [7.2.27] - 2026-10-31
+### Fixed
+- Fast landing is now gated on a fresh user input. 7.2.26 still allowed every other self-generated bounce because suppressing one bounce cleared the reversal state, so cmux/magpie could alternate spaces indefinitely. Landing now requires a key-down, mouse-down, or gesture newer than the previous landing; a bounce chain is skipped in full and the next real activation is honored
+
+## [7.2.26] - 2026-10-31
+### Fixed
+- Fast landing now treats a completed trackpad or Mission Control swipe as user intent. A gesture-driven desktop switch produces no key-down or mouse-down, so 7.2.25's hardware-idle check still read the resulting switch as a self-generated bounce and suppressed it. The landing also logs when an app is skipped because it already has a visible window, or has no target window, so a remaining failure names its cause
+
+## [7.2.25] - 2026-10-31
+### Fixed
+- Fast landing no longer suppresses a genuine switch back. 7.2.24 used a Cmd+Tab/mouse timestamp to tell a user switch from a self-sustaining bounce, but the Cmd+Tab connection notification is not delivered on every macOS, so a real Cmd+Tab round trip was still read as a bounce. The guard now compares the hardware key-down/mouse-down idle time against the time since the previous switch: an input after the switch means user intent, no input means the loop's own bounce
+
+## [7.2.24] - 2026-10-31
+### Fixed
+- Fast landing no longer skips a genuine app switch. The bounce guard from 7.2.23 used "time since the last Cmd+Tab" to tell a user switch from a self-sustaining loop, so a Dock click or a Cmd+Tab more than 1.5 s after the previous one could be misread as a loop reversal and dropped. It now uses a user-input timestamp (mouse-down and Cmd+Tab) taken after the previous switch, which both paths update, so a real switch is always honoured and only our own space change with no input in between is suppressed
+
+## [7.2.23] - 2026-10-31
+### Fixed
+- Fast landing no longer enters an unstoppable front-switch loop when an application switch raises a reverse switch for the app that was just left. The landing records the previous switch's from/to space and suppresses an immediate reversal, which is the loop signature; a real Cmd+Tab is exempted so genuine rapid tabbing is unaffected
+
 ## [7.2.22] - 2026-10-30
 ### Removed
 - Removed the macOS 27.0.1 native-fullscreen restore workaround, including its window/space memory and view-follow events. Current macOS returns the window to its source space, so native fullscreen handling remains without the workaround
