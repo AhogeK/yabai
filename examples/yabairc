@@ -45,4 +45,10 @@ yabai -m config                                 \
     mouse_action2                resize         \
     mouse_drop_action            swap
 
+# Optional fast application switching. Enabling this writes Dock's
+# workspaces-auto-swoosh=false and restarts Dock when the value changes.
+# The signal action focuses the target window's Space through the daemon.
+# yabai -m config fast_window_switch on
+# yabai -m signal --add event=application_front_switched action='yabai -m window --fast-focus $YABAI_PROCESS_ID' label=app-fast-land
+
 echo "yabai configuration loaded.."
