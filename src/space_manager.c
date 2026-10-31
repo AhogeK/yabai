@@ -1422,13 +1422,11 @@ void space_manager_begin(struct space_manager *sm)
     //
     sm->skip_window_focus_animation = false;
     //
-    // Fast landing is a separate path: it focuses the target window directly
-    // after yabai switches to its space. With the scripting addition it does
-    // not post a synthetic gesture; without it, space_manager_focus_space
-    // falls back to the gesture path. Keep it on by default; disable it when
-    // another component owns application switching.
+    // Off by default: the fast app-switch action is an opt-in signal script.
+    // Keeping this false preserves the native Dock behavior for users who do
+    // not register the signal.
     //
-    sm->fast_window_switch = true;
+    sm->fast_window_switch = false;
     table_init(&sm->view, 23, hash_view, compare_view);
 
     int display_count;
