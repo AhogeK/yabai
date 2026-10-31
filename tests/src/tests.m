@@ -13,13 +13,16 @@ typedef TEST_SIG(function);
 
 #include "area.c"
 #include "window_visibility.c"
+#include "fast_focus.c"
 
 #define TEST_ENTRY(name) { #name, test_##name },
 #define TEST_LIST                                              \
     TEST_ENTRY(display_area_is_in_direction)                   \
     TEST_ENTRY(closest_display_in_direction)                   \
     TEST_ENTRY(window_is_visible)                              \
-    TEST_ENTRY(window_is_sticky_effective)
+    TEST_ENTRY(window_is_sticky_effective)                     \
+    TEST_ENTRY(fast_focus_input_gate_accepts)                  \
+    TEST_ENTRY(fast_focus_choose_window)
 
 static struct {
     char *name;
