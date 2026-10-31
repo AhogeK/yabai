@@ -2,12 +2,12 @@
 .\"     Title: yabai
 .\"    Author: [see the "AUTHOR(S)" section]
 .\" Generator: Asciidoctor 2.0.26
-.\"      Date: 2026-10-30
+.\"      Date: 2026-11-01
 .\"    Manual: Yabai Manual
 .\"    Source: Yabai
 .\"  Language: English
 .\"
-.TH "YABAI" "1" "2026-10-30" "Yabai" "Yabai Manual"
+.TH "YABAI" "1" "2026-11-01" "Yabai" "Yabai Manual"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -247,18 +247,22 @@ Windows will keep their zoom\-state through layout changes.
 .RS 4
 Bypass the synthetic gesture used when a window on an inactive space is focused.
 .br
-This option does not control application front\-switch fast landing; use \f(CRfast_window_switch\fP for that path.
+This option does not control application front switching; native Cmd+Tab and Dock activation use Dock\(cqs \f(CRworkspaces\-auto\-swoosh\fP.
 .br
 You should only enable this if you do NOT use the scripting addition; the scripting addition implements the same functionality in a more robust way.
 .RE
 .sp
 \fBfast_window_switch\fP [\fI<BOOL_SEL>\fP]
 .RS 4
-Focus the target window directly after an application on an inactive space becomes frontmost.
+Gate the optional \f(CRapplication_front_switched\fP signal action that focuses the target window\(cqs space.
 .br
-With the scripting addition this avoids the extra focus delay without posting a synthetic gesture; without the scripting addition it falls back to the gesture path.
+Setting this to \f(CRon\fP also writes \f(CRcom.apple.dock.workspaces\-auto\-swoosh=false\fP and restarts Dock when the value changes; setting it to \f(CRoff\fP restores \f(CRtrue\fP.
 .br
-Enabled by default. Disable it when another component owns application or space switching, or when focus bounces between two applications.
+The Dock restart is asynchronous; wait for Dock to relaunch before expecting native Cmd+Tab behavior.
+.br
+yabai stores this flag but does not switch spaces from the option itself; register the action with \f(CRyabai \-m signal \-\-add event=application_front_switched ...\fP to let the action run.
+.br
+Default is \f(CRoff\fP.
 .RE
 .sp
 \fBwindow_shadow\fP [\fI<BOOL_SEL>|float\fP]
@@ -550,6 +554,18 @@ yabai \-m window [\fI<WINDOW_SEL>\fP] \fI<COMMAND>\fP
 Focus the given window.
 .br
 If none specified, focus the selected window instead.
+.RE
+.sp
+\fB\-\-fast\-focus\fP \fI<pid>\fP
+.RS 4
+Focus the target standard window of the given process through the fast
+application\-switch path.
+.br
+Requires \f(CRfast_window_switch on\fP; intended for the
+\f(CRapplication_front_switched\fP signal action. The daemon checks for new HID
+input, switches to the target space and focuses the window.
+.br
+Example: \f(CRyabai \-m signal \-\-add event=application_front_switched action=\*(Aqyabai \-m window \-\-fast\-focus $YABAI_PROCESS_ID\*(Aq label=app\-fast\-land\fP
 .RE
 .sp
 \fB\-\-close\fP [\fI<WINDOW_SEL>\fP]
