@@ -106,13 +106,18 @@ deploy:
 	@open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
 	@-sh -c "read -p "按回车继续..." _"
 
-	@echo "[6/7] 配置 Dock 窗口排序跟随..."
-	@defaults write com.apple.dock workspaces-auto-swoosh -bool false
+	@echo "[6/7] Reset native app switching and restart Dock..."
+	# Reset Dock to the native setting. `fast_window_switch on` is the explicit
+	# opt-in override that writes false again.
+	@defaults write com.apple.dock workspaces-auto-swoosh -bool true
 	@killall Dock 2>/dev/null || true
 	@i=0; while ! pgrep -x Dock >/dev/null && [ $$i -lt 25 ]; do sleep 0.2; i=$$((i+1)); done
 	@pgrep -x Dock >/dev/null || (echo "Dock did not restart"; exit 1)
+	# Dock must finish launching before the SA payload is injected; the pid
+	# alone appears before NSRunningApplication reports isFinishedLaunching.
+	@sleep 2
 
-	@echo "🚀 [7/7] 加载 SA 并启动服务..."
+	@echo "[7/7] Load the scripting addition and start the service..."
 	# ---- 避免些特殊情况，再执行一遍 -----
 	$(BINS) --stop-service 2>/dev/null || true
 	sudo $(BINS) --uninstall-sa 2>/dev/null || true
