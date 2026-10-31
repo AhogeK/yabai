@@ -5,7 +5,9 @@
 - **Root cause**: `fast_window_switch off` blocked the event-loop in `dock_set_auto_swoosh -> safe_exec -> wait4`; the config command never returned and native switching could not be restored.
 - **Fix**: Dock restart wait moved to a detached thread; off writes `workspaces-auto-swoosh=true` and returns immediately. Wait for Dock relaunch before expecting native Cmd+Tab.
 - **Verification**: build 0 warning; `make -C tests all` 6/6; runtime `off` validation pending user restart.
-- **Version**: 7.2.41; uncommitted.
+- **Version**: 7.2.41; released/pushed; runtime off-state validation still pending.
+- **Release commits**: ai-base `d8847a3`/`04526c0`/`af7c29c`/`82f79da`/`9b07b38` + AI `0af9f9f`; dev `d0c29b9`/`139fea7`/`0465ae6`/`6501d15`/`b24ea88`; master `a87917e`/`df7d97d`/`51b5c8f`/`2a35595`/`2f8cc15`; all pushed.
+- **Runtime**: off-state validation still pending user `make deploy`/restart.
 ### Phase 69: single window-focus path (2026-11-01)
 - `window --focus` already does space focus + visibility wait + exact window focus; removed redundant `space --focus` race. Manual hidden IntelliJ: 0.09–0.12s, wid 15149, space 8.
 - Real Cmd+Tab 8 samples: cmux↔IntelliJ, `latency_ms` 301–357ms, `focus_ms` 39–93ms, no failures; AXFocusedWindow=15149, target correct.
@@ -77,8 +79,8 @@
 
 | File | Lines | Limit |
 |---|---:|---:|
-| activeContext.md | 60 | 150 |
-| progress.md | 84 | 100 |
+| activeContext.md | 61 | 150 |
+| progress.md | 86 | 100 |
 | systemPatterns.md | 63 | 80 |
 | techContext.md | 73 | 80 |
 | projectbrief.md | 22 | 50 |

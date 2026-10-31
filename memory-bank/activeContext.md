@@ -2,11 +2,12 @@
 
 ## 当前工作焦点（2026-11-01）
 
-- 未提交代码审查已完成双轴检查；审查发现已按“C `window --fast-focus` 为唯一落位实现”修复，未提交。
+- 未提交代码审查已完成双轴检查；审查发现已按“C `window --fast-focus` 为唯一落位实现”修复并提交推送。
 - `src/message.c`：输入门改为 `kCGAnyInputEventType` 时间戳（覆盖键盘/鼠标/滚轮/手势）；目标窗口优先 `application_focused_window`，再回退首个标准窗口。
 - `tests/src/fast_focus.c`：新增 gate 与 focused-first 测试；`make -C tests all` 6/6 通过；`make` 0 warning。
 - 当前运行 daemon 仍是旧 7.2.40；真实 Cmd+Tab 8 次样本（cmux↔IntelliJ）`latency_ms` 301–357ms、`focus_ms` 39–93ms、无失败。C 新路径需用户 `make deploy` 后验证。
 - **7.2.41**：`fast_window_switch off` 的 Dock 重启等待移到 detached thread，修复事件循环 `wait4` 卡死；off 会恢复 `workspaces-auto-swoosh=true`，Dock 重启后原生 Cmd+Tab 应恢复。构建 0 warning，tests 6/6；运行时待部署。
+- **Release**：功能 `d8847a3`、测试 `04526c0`、构建 `af7c29c`、文档 `82f79da`、版本 `9b07b38`、AI `0af9f9f`；dev `d0c29b9`/`139fea7`/`0465ae6`/`6501d15`/`b24ea88`；master `a87917e`/`df7d97d`/`51b5c8f`/`2a35595`/`2f8cc15`；三支已推送且与 origin 一致。
 - 剩余延迟主要来自 signal 前 App 激活；脚本/C 落位无法稳定低于 200ms。预激活接管 Cmd+Tab 是独立大功能，当前不做。
 
 ## macOS 27.2 支持（7.2.7–7.2.13，已验证）
