@@ -177,13 +177,15 @@ Global Settings
 
 *skip_window_focus_animation* ['<BOOL_SEL>']::
     Bypass the synthetic gesture used when a window on an inactive space is focused. +
-    This option does not control application front-switch fast landing; use `fast_window_switch` for that path. +
+    This option does not control application front switching; native Cmd+Tab and Dock activation use Dock's `workspaces-auto-swoosh`. +
     You should only enable this if you do NOT use the scripting addition; the scripting addition implements the same functionality in a more robust way.
 
 *fast_window_switch* ['<BOOL_SEL>']::
-    Focus the target window directly after an application on an inactive space becomes frontmost. +
-    With the scripting addition this avoids the extra focus delay without posting a synthetic gesture; without the scripting addition it falls back to the gesture path. +
-    Enabled by default. Disable it when another component owns application or space switching, or when focus bounces between two applications.
+    Gate the optional `application_front_switched` signal action that focuses the target window's space. +
+    Setting this to `on` also writes `com.apple.dock.workspaces-auto-swoosh=false` and restarts Dock when the value changes; setting it to `off` restores `true`. +
+    The Dock restart is asynchronous; wait for Dock to relaunch before expecting native Cmd+Tab behavior. +
+    yabai stores this flag but does not switch spaces from the option itself; register the action with `yabai -m signal --add event=application_front_switched ...` to let the action run. +
+    Default is `off`.
 
 *window_shadow* ['<BOOL_SEL>|float']::
     Draw shadow for windows. +
@@ -377,6 +379,14 @@ COMMAND
 *--focus* ['<WINDOW_SEL>']::
     Focus the given window. +
     If none specified, focus the selected window instead.
+
+*--fast-focus* '<pid>'::
+    Focus the target standard window of the given process through the fast
+    application-switch path. +
+    Requires `fast_window_switch on`; intended for the
+    `application_front_switched` signal action. The daemon checks for new HID
+    input, switches to the target space and focuses the window. +
+    Example: `yabai -m signal --add event=application_front_switched action='yabai -m window --fast-focus $YABAI_PROCESS_ID' label=app-fast-land`
 
 *--close* ['<WINDOW_SEL>']::
     Close the given window. +
