@@ -373,6 +373,15 @@ git checkout ai-base
 - Dock 窗口排序跟随（`workspaces-auto-swoosh`）与 yabai 合成手势不能同时负责切换：两者都会触发前台切换，形成两个 APP 来回闪；关闭 auto-swoosh 时必须保持 `skip_window_focus_animation` off
 - `workspaces-auto-swoosh` 修改后必须重启 Dock 才生效；验证前比较 Dock 启动时间与 plist 修改时间，避免把旧进程行为当成新设置
 
+### R23: 运行时配置不得阻塞事件循环（Enforced）
+
+**核心原则：配置命令立即返回；系统进程重启在后台等待。**
+
+- `yabai -m config`、signal handler 等事件循环路径禁止对 Dock/WindowServer/服务重启执行同步 `waitpid`；等待必须移到 detached thread 或异步队列。
+- 任何“关闭功能”的配置必须真正恢复原生行为；`fast_window_switch off` 必须写回 `workspaces-auto-swoosh=true`，并等待 Dock 重启完成后再验证原生 Cmd+Tab。
+- 不得用 `&` 包一层 shell 就声称异步；必须确认事件循环不再阻塞（`sample` 栈中不得出现该路径的 `wait4`）。
+- 运行时行为未在用户重启后的真实环境验证前，状态只能标“待验证”。
+
 ## Execution Flow
 
 ```

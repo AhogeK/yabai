@@ -36,3 +36,4 @@ restart.sh
 
 # AI runtime data
 .omo/
+.omp/
