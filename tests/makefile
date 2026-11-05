@@ -1,6 +1,9 @@
-.PHONY: clean build run all
+.PHONY: clean build run script all
 
-all: clean build run
+all: clean build run script
+
+script:
+	./script/fast_land_test.sh
 
 clean:
 	rm -rf ./bin
