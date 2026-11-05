@@ -47,8 +47,11 @@ yabai -m config                                 \
 
 # Optional fast application switching. Enabling this writes Dock's
 # workspaces-auto-swoosh=false and restarts Dock when the value changes.
-# The signal action focuses the target window's Space through the daemon.
+# Two signals cover cross-app Cmd+Tab (pid) and same-app window switches (wid);
+# copy examples/app_fast_land.sh to ~/.config/yabai/app_fast_land.sh first, as
+# the script only lands when the target window is not visible.
 # yabai -m config fast_window_switch on
-# yabai -m signal --add event=application_front_switched action='yabai -m window --fast-focus $YABAI_PROCESS_ID' label=app-fast-land
+# yabai -m signal --add event=application_front_switched action="$HOME/.config/yabai/app_fast_land.sh" label=app-fast-land
+# yabai -m signal --add event=window_focused action="$HOME/.config/yabai/app_fast_land.sh" label=window-fast-land
 
 echo "yabai configuration loaded.."
