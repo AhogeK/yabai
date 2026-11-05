@@ -2,7 +2,7 @@
 
 ## 当前工作焦点（2026-11-06）
 
-- **未提交：普通 Cmd+Tab 回归已修复，fast landing 回到脚本实现**。C 版 `--fast-focus-window` 只认 signal wid / AX 焦点窗口；`application_front_switched` 在 AX 解析失败时不发 `window_focused`；叠加 `fast_window_switch on` 关掉 auto-swoosh → 没有任何路径切 desktop。源码逻辑回 7.2.41，版本 bump 到 7.2.42。
+- **7.2.42：普通 Cmd+Tab 回归已修复，fast landing 回到脚本实现**。C 版 `--fast-focus-window` 只认 signal wid / AX 焦点窗口；`application_front_switched` 在 AX 解析失败时不发 `window_focused`；叠加 `fast_window_switch on` 关掉 auto-swoosh → 没有任何路径切 desktop。源码逻辑回 7.2.41，版本 bump 到 7.2.42。
 - **当前实现**：`examples/app_fast_land.sh` 与 `~/.config/yabai/app_fast_land.sh`（同一文件，逐字节一致）；`application_front_switched`（pid）+ `window_focused`（wid）双 signal；目标解析 wid → pid → has-focus → first standard → first window。
 - **判定顺序**：最小化 → deminimize + 落位；可见且同 display → `skip-visible`；可见但异 display → `display --focus`（对已聚焦窗口同样执行）；隐藏 → `window --focus`。
 - **早退已移除（2026-11-06 实验）**：曾用“已聚焦且可见”提前退出省一次查询；实测切换显示器后约 0.4s 内 daemon 仍把旧显示器窗口报为焦点（6 次采样 1 次不一致，稳定态 6/6 一致），会吞掉 display 跟随，故删除该分支，代价约 +13ms。
@@ -10,7 +10,8 @@
 - **测试**：`tests/script/fast_land_test.sh`（stub `yabai`）21/21，覆盖禁用、可见 no-op、隐藏、最小化、跨 display、已聚焦但在其他显示器、pid 解析、锁占用、日志轮转；`make` 0 warning；`make -C tests all` 6/6。
 - **开销实测**：重复事件 wid 40ms、pid 48ms（原 94/60ms）；落位 130–140ms。
 - **待验证**：真实 Cmd+Tab 与真实同 App IDEA 点击（需用户按键），状态只能标“待验证”。
-- **未提交**：`README.md`、`doc/yabai.asciidoc`、`doc/yabai.1`、`examples/yabairc`、`examples/app_fast_land.sh`（新增）、`tests/Makefile`、`tests/script/fast_land_test.sh`（新增）、`src/yabai.c`、`scripts/install.sh`、`CHANGELOG.md`、`AGENTS.md`、`memory-bank/`。
+- **7.2.42 已发布**：ai-base `0d8cce3`（功能）/ `b4da019`（文档）/ `81af1ca`（版本）/ `ea8b2b5`（AI）；dev `117f66d` / `6a29a57` / `9c960da` / `7cca140`；master `c4c1cbe` / `ec6482b` / `f08520e` / `26d5019`；三支已推送且与 origin 一致。
+- **顺带修复**：`7.2.21` 的 CHANGELOG 条目从未进入 dev/master（只有 ai-base 的 `9088d9c` 带过），已用 `7cca140` / `26d5019` 补齐，现三支 CHANGELOG 完全一致。
 - **版本**：源码 7.2.42；机器上已装的二进制同为 7.2.42，但由已回退的 C 改动构建，需 `make deploy` 换成当前源码。
 - 剩余延迟主要来自 signal 前 App 激活（144–316ms）；只有预激活接管 Cmd+Tab 才可能低于 200ms，属独立功能。
 

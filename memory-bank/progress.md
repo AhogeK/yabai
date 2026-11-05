@@ -1,6 +1,6 @@
 # Progress - yabai
 
-## Current Phase: 7.2.42 — 脚本 + 双 signal（2026-11-06，未提交）
+## Current Phase: 7.2.42 — 脚本 + 双 signal（2026-11-06，已发布）
 - **内容**：fast landing 从 C 退回脚本 `examples/app_fast_land.sh`；双 signal + 单飞锁；重复事件 94→40ms，锁 600ms + owner pid，日志全路径轮转。
 - **验证**：`tests/script/fast_land_test.sh` 21/21；`make` 0 warning；`make -C tests all` 6/6；手动分支矩阵全过。
 - **审查后修正**：删除“已聚焦且可见即退出”分支（实测切换显示器后存在约 0.4s 的焦点归属滞后，会吞掉 display 跟随）。
