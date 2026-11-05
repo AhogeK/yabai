@@ -1,14 +1,18 @@
 # Active Context - yabai
 
-## 当前工作焦点（2026-11-01）
+## 当前工作焦点（2026-11-06）
 
-- 未提交代码审查已完成双轴检查；审查发现已按“C `window --fast-focus` 为唯一落位实现”修复并提交推送。
-- `src/message.c`：输入门改为 `kCGAnyInputEventType` 时间戳（覆盖键盘/鼠标/滚轮/手势）；目标窗口优先 `application_focused_window`，再回退首个标准窗口。
-- `tests/src/fast_focus.c`：新增 gate 与 focused-first 测试；`make -C tests all` 6/6 通过；`make` 0 warning。
-- 当前运行 daemon 仍是旧 7.2.40；真实 Cmd+Tab 8 次样本（cmux↔IntelliJ）`latency_ms` 301–357ms、`focus_ms` 39–93ms、无失败。C 新路径需用户 `make deploy` 后验证。
-- **7.2.41**：`fast_window_switch off` 的 Dock 重启等待移到 detached thread，修复事件循环 `wait4` 卡死；off 会恢复 `workspaces-auto-swoosh=true`，Dock 重启后原生 Cmd+Tab 应恢复。构建 0 warning，tests 6/6；运行时待部署。
-- **Release**：功能 `d8847a3`、测试 `04526c0`、构建 `af7c29c`、文档 `82f79da`、版本 `9b07b38`、AI `0af9f9f`；dev `d0c29b9`/`139fea7`/`0465ae6`/`6501d15`/`b24ea88`；master `a87917e`/`df7d97d`/`51b5c8f`/`2a35595`/`2f8cc15`；三支已推送且与 origin 一致。
-- 剩余延迟主要来自 signal 前 App 激活；脚本/C 落位无法稳定低于 200ms。预激活接管 Cmd+Tab 是独立大功能，当前不做。
+- **未提交：普通 Cmd+Tab 回归已修复，fast landing 回到脚本实现**。C 版 `--fast-focus-window` 只认 signal wid / AX 焦点窗口；`application_front_switched` 在 AX 解析失败时不发 `window_focused`；叠加 `fast_window_switch on` 关掉 auto-swoosh → 没有任何路径切 desktop。源码逻辑回 7.2.41，版本 bump 到 7.2.42。
+- **当前实现**：`examples/app_fast_land.sh` 与 `~/.config/yabai/app_fast_land.sh`（同一文件，逐字节一致）；`application_front_switched`（pid）+ `window_focused`（wid）双 signal；目标解析 wid → pid → has-focus → first standard → first window。
+- **判定顺序**：最小化 → deminimize + 落位；可见且同 display → `skip-visible`；可见但异 display → `display --focus`（对已聚焦窗口同样执行）；隐藏 → `window --focus`。
+- **早退已移除（2026-11-06 实验）**：曾用“已聚焦且可见”提前退出省一次查询；实测切换显示器后约 0.4s 内 daemon 仍把旧显示器窗口报为焦点（6 次采样 1 次不一致，稳定态 6/6 一致），会吞掉 display 跟随，故删除该分支，代价约 +13ms。
+- **争抢处理**：单飞锁 30×20ms=600ms 上限并写 owner pid；日志超 256KB 保留最后 200 行（每次调用检查，覆盖 skip 路径）；每次调用只读一次时钟。
+- **测试**：`tests/script/fast_land_test.sh`（stub `yabai`）21/21，覆盖禁用、可见 no-op、隐藏、最小化、跨 display、已聚焦但在其他显示器、pid 解析、锁占用、日志轮转；`make` 0 warning；`make -C tests all` 6/6。
+- **开销实测**：重复事件 wid 40ms、pid 48ms（原 94/60ms）；落位 130–140ms。
+- **待验证**：真实 Cmd+Tab 与真实同 App IDEA 点击（需用户按键），状态只能标“待验证”。
+- **未提交**：`README.md`、`doc/yabai.asciidoc`、`doc/yabai.1`、`examples/yabairc`、`examples/app_fast_land.sh`（新增）、`tests/Makefile`、`tests/script/fast_land_test.sh`（新增）、`src/yabai.c`、`scripts/install.sh`、`CHANGELOG.md`、`AGENTS.md`、`memory-bank/`。
+- **版本**：源码 7.2.42；机器上已装的二进制同为 7.2.42，但由已回退的 C 改动构建，需 `make deploy` 换成当前源码。
+- 剩余延迟主要来自 signal 前 App 激活（144–316ms）；只有预激活接管 Cmd+Tab 才可能低于 200ms，属独立功能。
 
 ## macOS 27.2 支持（7.2.7–7.2.13，已验证）
 

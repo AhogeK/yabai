@@ -93,3 +93,14 @@ E [com.apple.windowmanagement:login] No visible space found for display: 37D8832
 6. 直接 `space --focus` 已确认无横移；若仍动画，检查 yabairc 是否覆盖设置或 Dock 是否已重启。
 
 > 7.2.20：S11 的 fast landing 行为由源码与单测核对，尚未在 7.2.20 运行环境验证。
+
+## S12. `display --focus` 后焦点归属滞后约 0.4s（macOS 27.2，已验证）
+
+**判断**：`yabai -m display --focus <index>` 生效后，活动显示器立即切换，但 `query --windows --window` 报告的焦点窗口可能仍在旧显示器上，最长约 0.4s 才追上。稳定后焦点窗口的 display 与 `query --displays` 的 `has-focus` 一致。
+
+**动作**：
+1. 任何“窗口已聚焦就跳过 display 跟随”的早退都不安全：滞后窗口会被误判为“焦点在活动显示器”，从而吞掉 `display --focus`；
+2. 判断要不要跟随显示器时，直接查 `query --displays` 的 `has-focus`，不要用窗口的 `has-focus` 推断活动显示器；
+3. 复现：`display --focus A` → `display --focus B` → 立即读 `query --windows --window` 可看到旧值，`sleep 0.4` 后一致。
+
+**验证（2026-11-06）**：3 轮 × 2 个显示器共 6 次采样，稳定态 6/6 一致；立即读取 1/6 不一致（约 0.4s 内）。

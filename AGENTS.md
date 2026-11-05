@@ -372,6 +372,7 @@ git checkout ai-base
 - 行为类修复未在用户重启后的真实环境验证前，状态只能标“待验证”，不得写“已修复”
 - Dock 窗口排序跟随（`workspaces-auto-swoosh`）与 yabai 合成手势不能同时负责切换：两者都会触发前台切换，形成两个 APP 来回闪；关闭 auto-swoosh 时必须保持 `skip_window_focus_animation` off
 - `workspaces-auto-swoosh` 修改后必须重启 Dock 才生效；验证前比较 Dock 启动时间与 plist 修改时间，避免把旧进程行为当成新设置
+- `application_front_switched` 只在能解析出 AXFocusedWindow 时才连带发 `window_focused`；同 App 窗口切换必须直接监听 `window_focused` + `$YABAI_WINDOW_ID`。fast landing 的业务判断（目标取 App 焦点窗口、仅在其不可见时 focus）放在 signal 脚本里；**不要为覆盖新场景去收紧 C 层早退条件**——那会把正常 Cmd+Tab 一起拦掉（auto-swoosh 已被关，原生不接管）。
 
 ### R23: 运行时配置不得阻塞事件循环（Enforced）
 
