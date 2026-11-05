@@ -86,6 +86,11 @@
 ## [7.2.22] - 2026-10-30
 ### Removed
 - Removed the macOS 27.0.1 native-fullscreen restore workaround, including its window/space memory and view-follow events. Current macOS returns the window to its source space, so native fullscreen handling remains without the workaround
+
+## [7.2.21] - 2026-10-30
+### Changed
+- `make deploy` now disables Dock window-order follow and restarts Dock after the accessibility step, so a fresh Mac finishes deployment in the supported default state: `fast_window_switch` on, `skip_window_focus_animation` off, `workspaces-auto-swoosh` off
+
 ## [7.2.20] - 2026-10-29
 ### Fixed
 - Fast landing now waits for an application's windows to resolve before selecting a target, so a newly launched or reopened app can land on its hidden space. It also no longer skips the landing when the activation's AX focused-window notification is still pending
