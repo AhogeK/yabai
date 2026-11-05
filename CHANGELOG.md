@@ -1,3 +1,10 @@
+## [7.2.42] - 2026-11-06
+### Added
+- `examples/app_fast_land.sh`: opt-in fast application landing driven by two signals. `application_front_switched` covers cross-application Cmd+Tab through `$YABAI_PROCESS_ID` and is the only signal left when the AX focused window cannot be resolved; `window_focused` covers same-app window switches through `$YABAI_WINDOW_ID`. The script lands only when the target window is hidden or minimized, follows the owning display for a visible window on another display, restores minimized windows, and serializes duplicate events with an owner-checked lock
+- Integration test for the script (`tests/script/fast_land_test.sh`), covering the config gate, target resolution, visibility decisions, display follow, lock contention and log rotation
+### Changed
+- `doc/yabai.asciidoc` documents the two-signal setup as the recommended opt-in; `window --fast-focus` remains available for the single-signal case
+
 ## [7.2.41] - 2026-11-01
 ### Fixed
 - `fast_window_switch off` no longer blocks the yabai event loop while waiting for Dock to restart. The Dock restart wait now runs on a detached thread, and `off` restores `workspaces-auto-swoosh=true`; native Cmd+Tab desktop switching returns after Dock relaunches
