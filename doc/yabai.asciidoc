@@ -181,10 +181,14 @@ Global Settings
     You should only enable this if you do NOT use the scripting addition; the scripting addition implements the same functionality in a more robust way.
 
 *fast_window_switch* ['<BOOL_SEL>']::
-    Gate the optional `application_front_switched` signal action that focuses the target window's space. +
+    Gate the optional fast application-switch actions. +
     Setting this to `on` also writes `com.apple.dock.workspaces-auto-swoosh=false` and restarts Dock when the value changes; setting it to `off` restores `true`. +
     The Dock restart is asynchronous; wait for Dock to relaunch before expecting native Cmd+Tab behavior. +
-    yabai stores this flag but does not switch spaces from the option itself; register the action with `yabai -m signal --add event=application_front_switched ...` to let the action run. +
+    yabai stores this flag but does not switch spaces from the option itself; register the actions below to let them run. +
+    Recommended setup: copy `examples/app_fast_land.sh` to `~/.config/yabai/app_fast_land.sh` and register it for both events. Both are required, because `application_front_switched` only carries the target process and is the only signal left when the AX focused window cannot be resolved, while `window_focused` is the only one that fires for same-app window switches. The script lands only when the target window is hidden or minimized, follows the owning display for a visible window on another display, and restores minimized windows. +
+    Example: +
+    `yabai -m signal --add event=application_front_switched action="$HOME/.config/yabai/app_fast_land.sh" label=app-fast-land` +
+    `yabai -m signal --add event=window_focused action="$HOME/.config/yabai/app_fast_land.sh" label=window-fast-land` +
     Default is `off`.
 
 *window_shadow* ['<BOOL_SEL>|float']::
@@ -386,6 +390,9 @@ COMMAND
     Requires `fast_window_switch on`; intended for the
     `application_front_switched` signal action. The daemon checks for new HID
     input, switches to the target space and focuses the window. +
+    This single-signal form only covers cross-application switches; see
+    `fast_window_switch` for the two-signal script that also handles same-app
+    window switches. +
     Example: `yabai -m signal --add event=application_front_switched action='yabai -m window --fast-focus $YABAI_PROCESS_ID' label=app-fast-land`
 
 *--close* ['<WINDOW_SEL>']::
