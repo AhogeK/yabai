@@ -15,13 +15,14 @@
 # is minimized. A visible window on the active display is a no-op, so a focus
 # event raised by our own landing cannot revert it.
 #
-# Log and lock paths can be overridden for the test harness; the defaults are
-# what the installed signals use.
+# Log, lock and landing-state paths can be overridden for the test harness; the
+# defaults are what the installed signals use.
 #
 set -euo pipefail
 
 log="${YABAI_FAST_LAND_LOG:-/tmp/yabai_app_fast_land.log}"
 lock="${YABAI_FAST_LAND_LOCK:-/tmp/yabai_app_fast_land.lock}"
+state="${YABAI_FAST_LAND_STATE:-/tmp/yabai_app_fast_land.state}"
 
 # bash has no builtin clock: read it once and reuse it for every log line.
 now_s="$(date +%s)"
@@ -31,6 +32,12 @@ mode="$(yabai -m config fast_window_switch 2>/dev/null || printf off)"
 
 wid="${YABAI_WINDOW_ID:-}"
 pid="${YABAI_PROCESS_ID:-}"
+
+# Which signal produced this invocation; both are registered but they carry
+# different identifiers, and the two paths behave differently mid-switch.
+src="none"
+[[ -n "$wid" ]] && src="wid"
+[[ -n "$pid" ]] && src="pid"
 
 #
 # One landing emits more than one event (app-front, plus the window_focused it
@@ -100,22 +107,46 @@ fi
 
 # One jq call for all fields: a process per field costs ~4.6ms each, and the
 # duplicate-event path is dominated by these forks.
-fields="$(jq -r '[.id, .space, .display, ."is-visible", ."is-minimized"] | @tsv' <<<"$target")" || exit 0
-IFS=$'\t' read -r wid space display visible minimized <<<"$fields"
+fields="$(jq -r '[.id, .space, .display, ."is-visible", ."is-minimized", .pid] | @tsv' <<<"$target")" || exit 0
+IFS=$'\t' read -r wid space display visible minimized wpid <<<"$fields"
 
 log_line() {  # wid space action [extra-field]
     local extra=${4:+$4 }
-    printf '%s wid=%s space=%s %saction=%s\n' "$now_s" "$1" "$2" "$extra" "$3" >> "$log"
+    printf '%s src=%s wid=%s space=%s %saction=%s\n' "$now_s" "$src" "$1" "$2" "$extra" "$3" >> "$log"
 }
 
 land_window() {
     log_line "$wid" "$space" land
     if yabai -m window --focus "$wid" >/dev/null 2>&1; then
+        # Remember what we landed on: the app may re-assert its other window.
+        printf '%s %s %s\n' "$now_s" "$wpid" "$wid" > "$state"
         log_line "$wid" "$space" land-ok
     else
         log_line "$wid" "$space" land-failed
     fi
 }
+
+#
+# yabai emits window_focused for focus changes it did not cause. After a
+# landing switches Spaces, the app re-asserts the window it considers key,
+# which is usually its other window on the Space we just left. Landing on that
+# event switches back, the app re-asserts again, and the pair ping-pongs
+# indefinitely (measured: IntelliJ, two windows on two Spaces, ~4 landings per
+# second, every event src=wid).
+#
+# A user cannot focus a window on a hidden Space without the Space becoming
+# visible first, so a window_focused event for a *different* window of the
+# *same* app right after our landing is a re-assertion, not intent. Only the
+# window_focused path is filtered: application_front_switched is what rapid
+# Cmd+Tab produces and must stay responsive.
+#
+if [[ "$src" == "wid" && -f "$state" ]]; then
+    read -r s_ts s_pid s_wid < "$state" || true
+    if [[ "${s_pid:-}" == "$wpid" && "${s_wid:-}" != "$wid" ]] && (( now_s - ${s_ts:-0} <= 1 )); then
+        log_line "$wid" "$space" skip-app-reassert
+        exit 0
+    fi
+fi
 
 # A minimized window is never visible: restore it, then land on it.
 if [[ "$minimized" == "true" ]]; then

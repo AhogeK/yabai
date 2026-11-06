@@ -52,9 +52,10 @@ check() {   # description, expected, actual
     fi
 }
 
-window() {  # id space display visible minimized focused
-    printf '{"id":%s,"pid":77,"space":%s,"display":%s,"role":"AXWindow","subrole":"AXStandardWindow","is-visible":%s,"is-minimized":%s,"has-focus":%s}\n' \
-        "$1" "$2" "$3" "$4" "$5" "$6"
+window() {  # id space display visible minimized focused [pid]
+    local p=${7:-77}
+    printf '{"id":%s,"pid":%s,"space":%s,"display":%s,"role":"AXWindow","subrole":"AXStandardWindow","is-visible":%s,"is-minimized":%s,"has-focus":%s}\n' \
+        "$1" "$p" "$2" "$3" "$4" "$5" "$6"
 }
 
 displays() {  # index of the active display
@@ -67,6 +68,7 @@ displays() {  # index of the active display
 reset() {
     : > "$STUB_ACTIONS"
     : > "$tmp/log"
+    rm -f "$tmp/state"
     export STUB_MODE=on
     displays 1 > "$STUB_DISPLAYS"
     unset YABAI_WINDOW_ID YABAI_PROCESS_ID
@@ -77,7 +79,8 @@ logged() {  # action names in order
 }
 
 invoke() {
-    YABAI_FAST_LAND_LOG="$tmp/log" YABAI_FAST_LAND_LOCK="$tmp/lock" "$SCRIPT"
+    YABAI_FAST_LAND_LOG="$tmp/log" YABAI_FAST_LAND_LOCK="$tmp/lock" \
+    YABAI_FAST_LAND_STATE="$tmp/state" "$SCRIPT"
 }
 
 # 1. Disabled: the config gate must stop everything before any query.
@@ -163,6 +166,37 @@ for _ in $(seq 8000); do printf '1700000000 wid=1 space=1 action=padding\n'; don
 YABAI_WINDOW_ID=42 invoke
 lines=$(wc -l < "$tmp/log" | tr -d ' ')
 check 'rotation: bounded line count' 'yes' "$([[ "$lines" -le 210 ]] && echo yes || echo "no:${lines}")"
+
+# 12. The app re-asserts its other window after our landing: not user intent,
+#     must not land back (this is the cross-Space ping-pong).
+reset
+window 42 3 1 false false false 77 > "$STUB_WINDOW"
+printf '%s 77 41\n' "$(date +%s)" > "$tmp/state"
+YABAI_WINDOW_ID=42 invoke
+check 'app re-assert: log' 'skip-app-reassert' "$(logged)"
+check 'app re-assert: no cli action' '' "$(cat "$STUB_ACTIONS")"
+
+# 13. A different app right after a landing is real intent: land.
+reset
+window 42 3 1 false false false 88 > "$STUB_WINDOW"
+printf '%s 77 41\n' "$(date +%s)" > "$tmp/state"
+YABAI_WINDOW_ID=42 invoke
+check 'other app after landing: log' 'land land-ok' "$(logged)"
+check 'other app after landing: cli action' '-m window --focus 42' "$(cat "$STUB_ACTIONS")"
+
+# 14. A state entry older than the filter window must not suppress anything.
+reset
+window 42 3 1 false false false 77 > "$STUB_WINDOW"
+printf '%s 77 41\n' "$(( $(date +%s) - 5 ))" > "$tmp/state"
+YABAI_WINDOW_ID=42 invoke
+check 'stale state: log' 'land land-ok' "$(logged)"
+
+# 15. application_front_switched is never filtered: rapid Cmd+Tab must land.
+reset
+printf '[%s]\n' "$(window 42 3 1 false false false 77)" > "$STUB_WINDOWS"
+printf '%s 77 41\n' "$(date +%s)" > "$tmp/state"
+YABAI_PROCESS_ID=77 invoke
+check 'app-front not filtered: log' 'land land-ok' "$(logged)"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [[ "$fail" -eq 0 ]]
