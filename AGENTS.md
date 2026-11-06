@@ -373,6 +373,7 @@ git checkout ai-base
 - Dock 窗口排序跟随（`workspaces-auto-swoosh`）与 yabai 合成手势不能同时负责切换：两者都会触发前台切换，形成两个 APP 来回闪；关闭 auto-swoosh 时必须保持 `skip_window_focus_animation` off
 - `workspaces-auto-swoosh` 修改后必须重启 Dock 才生效；验证前比较 Dock 启动时间与 plist 修改时间，避免把旧进程行为当成新设置
 - `application_front_switched` 只在能解析出 AXFocusedWindow 时才连带发 `window_focused`；同 App 窗口切换必须直接监听 `window_focused` + `$YABAI_WINDOW_ID`。fast landing 的业务判断（目标取 App 焦点窗口、仅在其不可见时 focus）放在 signal 脚本里；**不要为覆盖新场景去收紧 C 层早退条件**——那会把正常 Cmd+Tab 一起拦掉（auto-swoosh 已被关，原生不接管）。
+- `window_focused` 也会被 App 的“重上报”触发：落位切 Space 后，App 把它仍视为 key 的另一个窗口报上来，yabai 再发一次 signal；脚本照单落位就会来回切（实测约 4 次/秒）。落位脚本必须按「同一 pid、不同 wid、刚落位 ≤1s」过滤，**不能靠“窗口是否可见”判断**——闭环中目标始终处于隐藏态；`application_front_switched` 不要过滤，否则快速 Cmd+Tab 失效。
 
 ### R23: 运行时配置不得阻塞事件循环（Enforced）
 

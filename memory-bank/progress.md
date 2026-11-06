@@ -1,5 +1,12 @@
 # Progress - yabai
 
+## Current Phase: 7.2.43 — 来回落焦修复（2026-11-06，已发布）
+- **根因**：落位切 Space 后 App 重上报另一个窗口，`window_focused` 形成乒乓（IntelliJ 两个窗口两个 Space，约 4 次落位/秒）。
+- **修复**：同一 pid、不同 wid、落位后 1 秒内的 `window_focused` 记 `skip-app-reassert` 并退出；`application_front_switched` 不过滤。
+- **验证**：受控复现 17 行/2 秒 → 修复后同类事件 1 行即止，3 秒静置无新增；`tests/script/fast_land_test.sh` 27/27。
+- **待验证**：真实 opt+shift+n 流程（含 destroy_empty_spaces 步骤）。
+- **发布**：ai-base `bf5e3bb`（功能）/ `c8a18c1`（版本）；dev `97fff35` / `811067d`；master `6f45d08` / `d843b5c`；三支已推送。
+
 ## Current Phase: 7.2.42 — 脚本 + 双 signal（2026-11-06，已发布）
 - **内容**：fast landing 从 C 退回脚本 `examples/app_fast_land.sh`；双 signal + 单飞锁；重复事件 94→40ms，锁 600ms + owner pid，日志全路径轮转。
 - **验证**：`tests/script/fast_land_test.sh` 21/21；`make` 0 warning；`make -C tests all` 6/6；手动分支矩阵全过。

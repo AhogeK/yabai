@@ -104,3 +104,15 @@ E [com.apple.windowmanagement:login] No visible space found for display: 37D8832
 3. 复现：`display --focus A` → `display --focus B` → 立即读 `query --windows --window` 可看到旧值，`sleep 0.4` 后一致。
 
 **验证（2026-11-06）**：3 轮 × 2 个显示器共 6 次采样，稳定态 6/6 一致；立即读取 1/6 不一致（约 0.4s 内）。
+
+## S13. 落位后同一 App 重新上报另一窗口，形成来回落焦（macOS 27.2，已验证）
+
+**判断**：`window --focus` 落位并切换 Space 后，App 会把“它仍视为 key window”的另一个窗口重新上报，yabai 据此再发一次 `window_focused`。若脚本按事件落位，就切回那个窗口，App 再上报——闭环。实测 IntelliJ 两个窗口分处两个 Space 时约 4 次落位/秒。
+
+**动作**：
+1. `window_focused` 落位必须按“同一 App、不同窗口、刚发生落位”过滤；实测 1 秒窗口足够覆盖闭环周期（约 250ms）；
+2. 只过滤 `window_focused`，不要过滤 `application_front_switched`——后者是快速 Cmd+Tab 的来源；
+3. 判别依据是事件里的 `$YABAI_WINDOW_ID` 与落位记录中的 pid/wid，不是“窗口是否可见”（闭环中目标始终处于不可见态，可见性判断拦不住）；
+4. 排障时先看脚本日志的 `src=wid|pid`：闭环全部是 `src=wid`。
+
+**验证（2026-11-06）**：受控复现 17 行/2 秒（`35530` ↔ `35832`，pid 61040）；加过滤后同类事件只产生 1 行 `skip-app-reassert`，3 秒静置无新增。
