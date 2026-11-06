@@ -1,3 +1,8 @@
+## [7.2.43] - 2026-11-06
+### Fixed
+- Fast landing no longer ping-pongs between two windows of the same application on different Spaces. After a landing switches Spaces, the application re-asserts the window it still considers key; the script treated that `window_focused` event as intent and landed back, up to several times per second. A `window_focused` event for a different window of the application landed on within the last second is now ignored. `application_front_switched` stays unfiltered, so rapid Cmd+Tab keeps working
+- `examples/app_fast_land.sh` records the originating signal (`src=wid|pid`) in its log, which is what isolated the loop
+
 ## [7.2.42] - 2026-11-06
 ### Added
 - `examples/app_fast_land.sh`: opt-in fast application landing driven by two signals. `application_front_switched` covers cross-application Cmd+Tab through `$YABAI_PROCESS_ID` and is the only signal left when the AX focused window cannot be resolved; `window_focused` covers same-app window switches through `$YABAI_WINDOW_ID`. The script lands only when the target window is hidden or minimized, follows the owning display for a visible window on another display, restores minimized windows, and serializes duplicate events with an owner-checked lock
