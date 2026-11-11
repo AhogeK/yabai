@@ -2,12 +2,12 @@
 .\"     Title: yabai
 .\"    Author: [see the "AUTHOR(S)" section]
 .\" Generator: Asciidoctor 2.0.26
-.\"      Date: 2026-11-06
+.\"      Date: 2026-11-08
 .\"    Manual: Yabai Manual
 .\"    Source: Yabai
 .\"  Language: English
 .\"
-.TH "YABAI" "1" "2026-11-06" "Yabai" "Yabai Manual"
+.TH "YABAI" "1" "2026-11-08" "Yabai" "Yabai Manual"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -262,13 +262,9 @@ The Dock restart is asynchronous; wait for Dock to relaunch before expecting nat
 .br
 yabai stores this flag but does not switch spaces from the option itself; register the actions below to let them run.
 .br
-Recommended setup: copy \f(CRexamples/app_fast_land.sh\fP to \f(CR~/.config/yabai/app_fast_land.sh\fP and register it for both events. Both are required, because \f(CRapplication_front_switched\fP only carries the target process and is the only signal left when the AX focused window cannot be resolved, while \f(CRwindow_focused\fP is the only one that fires for same\-app window switches. The script lands only when the target window is hidden or minimized, follows the owning display for a visible window on another display, and restores minimized windows.
+Recommended setup: copy \f(CRexamples/app_fast_land.sh\fP to \f(CR~/.config/yabai/app_fast_land.sh\fP and register it for \f(CRapplication_front_switched\fP only. The script lands only when the target window is hidden or minimized, and follows the owning display for a visible window on another display. Do not register \f(CRwindow_focused\fP: yabai raises it for focus changes nobody asked for, and acting on it makes focus bounce between windows.
 .br
-Example:
-.br
-\f(CRyabai \-m signal \-\-add event=application_front_switched action="$HOME/.config/yabai/app_fast_land.sh" label=app\-fast\-land\fP
-.br
-\f(CRyabai \-m signal \-\-add event=window_focused action="$HOME/.config/yabai/app_fast_land.sh" label=window\-fast\-land\fP
+Example: \f(CRyabai \-m signal \-\-add event=application_front_switched action="$HOME/.config/yabai/app_fast_land.sh" label=app\-fast\-land\fP
 .br
 Default is \f(CRoff\fP.
 .RE
