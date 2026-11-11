@@ -32,7 +32,7 @@
 
 | 项目 | 当前值 |
 |---|---|
-| 目标系统 | macOS 27.2 (26B123)；Dock 2571.1.32.402；WindowManager.framework 462.1.41.404 |
+| 目标系统 | macOS 27.2.1 (26B131)；Dock 2571.1.32.402；WindowManager.framework 462.1.41.404 |
 | 空间创建 | 27.2：Dock helper `0x20ce00`；27.0/27.1：`0x2bb62c`；第 4 参数是**新空间身份**，必须传新 UUID；按 Dock 构建白名单 fail-closed |
 | 空间销毁/移动 | 27.2：`CGSSpaceDestroy` / `CGSMoveManagedSpaceToDisplayIndex` / `SLSTransaction*`；旧 Dock removeSpace/moveSpace 在 27.2 不存在 |
 | Spaces / DPPM 单例 | 27.2：Spaces 槽 `0x329be0`；DPPM 已转 Swift，未使用；27.0：`0x100409bb0` / `0x100409c50` |
@@ -41,6 +41,12 @@
 - 版本适配排查流程 → `domains/dock-reverse-engineering/scenarios.md`
 - 空间三代实现与不变量 → `domains/space-management/principles.md`
 - SA 协议/属性位/版本门 → `domains/scripting-addition/{principles,references}.md`
+
+## 升级后首次登录（2026-11-11 实测）
+
+- 27.2 → 27.2.1 后首次登录，daemon 16:27:56 启动，16:27:56–16:28:03 出现 9 次 `Re-initialization successful; ... XPC_ERROR_CONNECTION_INTERRUPTED`（AppKit/AppIntents），期间窗口不被接管，会话稳定后自行恢复，全程未重启 daemon
+- Dock 构建仍为 2571.1.32.402，SA 无报错，`dock_did_restart` 未触发 → 不是 SA 失效，也不是 daemon 崩溃
+- 判断“是否真的没工作”用 `yabai -m query --windows | jq length`，不要以 skhd 热键为准：会话恢复期热键同样可能不响应
 
 ### Swift 调用约定速查（26/27 通用）
 
