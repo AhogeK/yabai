@@ -1,5 +1,11 @@
 # Progress - yabai
 
+## Current Phase: 7.2.44 — window_focused 退出动作路径（2026-11-08，未提交）
+- **根因**：切 Space 或显示器后，`window_focused` 会收到旧侧重上报；落位与 display 跟随都会成环（Chrome 两窗口跨屏约 2 次/秒），并让 `opt+shift+n` 落回老桌面窗口。
+- **修复**：脚本只对 `application_front_switched` 动作；`window_focused` 记 `skip-window-event` 后退出；删除落位状态与同 App 过滤。
+- **验证**：`space --create` + `window --space` + `space --focus` 连做 3 轮均落在新窗口；脚本测试 23/23。
+- **未提交**：等授权。
+
 ## Current Phase: 7.2.43 — 来回落焦修复（2026-11-06，已发布）
 - **根因**：落位切 Space 后 App 重上报另一个窗口，`window_focused` 形成乒乓（IntelliJ 两个窗口两个 Space，约 4 次落位/秒）。
 - **修复**：同一 pid、不同 wid、落位后 1 秒内的 `window_focused` 记 `skip-app-reassert` 并退出；`application_front_switched` 不过滤。

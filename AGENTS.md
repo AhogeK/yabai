@@ -373,7 +373,8 @@ git checkout ai-base
 - Dock 窗口排序跟随（`workspaces-auto-swoosh`）与 yabai 合成手势不能同时负责切换：两者都会触发前台切换，形成两个 APP 来回闪；关闭 auto-swoosh 时必须保持 `skip_window_focus_animation` off
 - `workspaces-auto-swoosh` 修改后必须重启 Dock 才生效；验证前比较 Dock 启动时间与 plist 修改时间，避免把旧进程行为当成新设置
 - `application_front_switched` 只在能解析出 AXFocusedWindow 时才连带发 `window_focused`；同 App 窗口切换必须直接监听 `window_focused` + `$YABAI_WINDOW_ID`。fast landing 的业务判断（目标取 App 焦点窗口、仅在其不可见时 focus）放在 signal 脚本里；**不要为覆盖新场景去收紧 C 层早退条件**——那会把正常 Cmd+Tab 一起拦掉（auto-swoosh 已被关，原生不接管）。
-- `window_focused` 也会被 App 的“重上报”触发：落位切 Space 后，App 把它仍视为 key 的另一个窗口报上来，yabai 再发一次 signal；脚本照单落位就会来回切（实测约 4 次/秒）。落位脚本必须按「同一 pid、不同 wid、刚落位 ≤1s」过滤，**不能靠“窗口是否可见”判断**——闭环中目标始终处于隐藏态；`application_front_switched` 不要过滤，否则快速 Cmd+Tab 失效。
+- `window_focused` 的落位与显示器跟随都必须禁用：切 Space 或显示器后，它会收到“刚离开那一侧”的重上报，照做就会来回切（实测同 App 两窗口跨 Space 约 4 次/秒，Chrome 跨屏约 2 次/秒），并导致 `space --create` 后焦点回到老桌面。只有 `application_front_switched` 代表用户意图；`window_focused` 只记日志。点击窗口、同 App 切换、切显示器本身已由系统激活目标。
+- 显示器跟随只允许出现在 `application_front_switched` 路径：`window_focused` 在切换显示器后会收到另一块屏幕上同 App 窗口的重上报，跟着走会来回切（实测两块屏约 2 次/秒）；点击或同 App 窗口切换本身已激活所属显示器，不需要脚本代劳。
 
 ### R23: 运行时配置不得阻塞事件循环（Enforced）
 

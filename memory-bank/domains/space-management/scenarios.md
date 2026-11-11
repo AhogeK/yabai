@@ -116,3 +116,5 @@ E [com.apple.windowmanagement:login] No visible space found for display: 37D8832
 4. 排障时先看脚本日志的 `src=wid|pid`：闭环全部是 `src=wid`。
 
 **验证（2026-11-06）**：受控复现 17 行/2 秒（`35530` ↔ `35832`，pid 61040）；加过滤后同类事件只产生 1 行 `skip-app-reassert`，3 秒静置无新增。
+
+**后续（2026-11-08，7.2.44）**：最终处置是 `window_focused` 完全不参与动作——落位与 display 跟随都会成环（Chrome 两窗口跨屏约 2 次/秒），且会让 `space --create` 后焦点回到老桌面窗口。只保留 `application_front_switched` 动作，`window_focused` 仅记日志。
