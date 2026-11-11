@@ -185,10 +185,8 @@ Global Settings
     Setting this to `on` also writes `com.apple.dock.workspaces-auto-swoosh=false` and restarts Dock when the value changes; setting it to `off` restores `true`. +
     The Dock restart is asynchronous; wait for Dock to relaunch before expecting native Cmd+Tab behavior. +
     yabai stores this flag but does not switch spaces from the option itself; register the actions below to let them run. +
-    Recommended setup: copy `examples/app_fast_land.sh` to `~/.config/yabai/app_fast_land.sh` and register it for both events. Both are required, because `application_front_switched` only carries the target process and is the only signal left when the AX focused window cannot be resolved, while `window_focused` is the only one that fires for same-app window switches. The script lands only when the target window is hidden or minimized, follows the owning display for a visible window on another display, and restores minimized windows. +
-    Example: +
-    `yabai -m signal --add event=application_front_switched action="$HOME/.config/yabai/app_fast_land.sh" label=app-fast-land` +
-    `yabai -m signal --add event=window_focused action="$HOME/.config/yabai/app_fast_land.sh" label=window-fast-land` +
+    Recommended setup: copy `examples/app_fast_land.sh` to `~/.config/yabai/app_fast_land.sh` and register it for `application_front_switched` only. The script lands only when the target window is hidden or minimized, and follows the owning display for a visible window on another display. Do not register `window_focused`: yabai raises it for focus changes nobody asked for, and acting on it makes focus bounce between windows. +
+    Example: `yabai -m signal --add event=application_front_switched action="$HOME/.config/yabai/app_fast_land.sh" label=app-fast-land` +
     Default is `off`.
 
 *window_shadow* ['<BOOL_SEL>|float']::
