@@ -1,3 +1,7 @@
+## [7.2.45] - 2026-11-27
+### Fixed
+- Fast landing now reaches a native fullscreen application. Its window lives on a Space of its own, and `yabai -m window --focus <id>` refuses it with "could not locate window", so Cmd+Tab to a fullscreen app left the focus on the previous desktop. The script focuses the target Space instead, and a re-activation while that Space is already current is logged as `skip-fullscreen-active` rather than counted as a failed landing
+
 ## [7.2.44] - 2026-11-08
 ### Fixed
 - Fast landing no longer acts on `window_focused`. yabai raises that signal for focus changes nobody requested — the application re-asserting a window after a Space switch, or the window on the display just left — so landing on it made focus bounce: two windows of one app across Spaces about 4 times per second, and two Chrome windows across displays about 2 times per second, leaving focus on the old desktop after `space --create` plus `window --space`. The script now acts only on `application_front_switched`, which is what Cmd+Tab raises; the window signal is logged as `skip-window-event` for diagnosis. Display follow consequently applies only to the app-switch path
