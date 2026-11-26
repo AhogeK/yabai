@@ -107,8 +107,8 @@ target="$(yabai -m query --windows 2>/dev/null | jq -c --argjson pid "$pid" '
 [[ -n "$target" ]] || exit 0
 
 # One jq call for all fields: a process per field costs ~4.6ms each.
-fields="$(jq -r '[.id, .space, .display, ."is-visible", ."is-minimized"] | @tsv' <<<"$target")" || exit 0
-IFS=$'\t' read -r wid space display visible minimized <<<"$fields"
+fields="$(jq -r '[.id, .space, .display, ."is-visible", ."is-minimized", ."is-native-fullscreen"] | @tsv' <<<"$target")" || exit 0
+IFS=$'\t' read -r wid space display visible minimized fullscreen <<<"$fields"
 
 log_line() {  # wid space action [extra-field]
     local extra=${4:+$4 }
@@ -117,6 +117,24 @@ log_line() {  # wid space action [extra-field]
 
 land_window() {
     log_line "$wid" "$space" land
+    # A native fullscreen window lives on its own Space and cannot be reached
+    # with `window --focus` (it answers "could not locate window"); focusing
+    # the Space is what brings the app forward.
+    if [[ "$fullscreen" == "true" ]]; then
+        # The app re-activates while its Space is already current, and
+        # `space --focus` reports failure for the current Space; treat that as
+        # already landed instead of logging a false failure.
+        if [[ "$(yabai -m query --spaces --space 2>/dev/null | jq -r '.index // empty' || true)" == "$space" ]]; then
+            log_line "$wid" "$space" skip-fullscreen-active "fullscreen=1"
+            return
+        fi
+        if yabai -m space --focus "$space" >/dev/null 2>&1; then
+            log_line "$wid" "$space" land-ok "fullscreen=1"
+        else
+            log_line "$wid" "$space" land-failed "fullscreen=1"
+        fi
+        return
+    fi
     if yabai -m window --focus "$wid" >/dev/null 2>&1; then
         log_line "$wid" "$space" land-ok
     else
