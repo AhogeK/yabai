@@ -26,6 +26,8 @@ case "$*" in
     "-m query --windows --window "*) cat "$STUB_WINDOW" ;;
     "-m query --windows") cat "$STUB_WINDOWS" ;;
     "-m query --displays") cat "$STUB_DISPLAYS" ;;
+    "-m query --spaces --space") printf '{"index":%s}\n' "${STUB_ACTIVE_SPACE:-1}" ;;
+    "-m space --focus "*) [[ "${STUB_FAIL_SPACE:-0}" == 1 ]] && exit 1; printf '%s\n' "$*" >> "$STUB_ACTIONS" ;;
     "-m window --focus "*) printf '%s\n' "$*" >> "$STUB_ACTIONS" ;;
     "-m window --deminimize "*) printf '%s\n' "$*" >> "$STUB_ACTIONS" ;;
     "-m display --focus "*) printf '%s\n' "$*" >> "$STUB_ACTIONS" ;;
@@ -52,10 +54,10 @@ check() {   # description, expected, actual
     fi
 }
 
-window() {  # id space display visible minimized focused [pid]
-    local p=${7:-77}
-    printf '{"id":%s,"pid":%s,"space":%s,"display":%s,"role":"AXWindow","subrole":"AXStandardWindow","is-visible":%s,"is-minimized":%s,"has-focus":%s}\n' \
-        "$1" "$p" "$2" "$3" "$4" "$5" "$6"
+window() {  # id space display visible minimized focused [pid] [native-fullscreen]
+    local p=${7:-77} full=${8:-false}
+    printf '{"id":%s,"pid":%s,"space":%s,"display":%s,"role":"AXWindow","subrole":"AXStandardWindow","is-visible":%s,"is-minimized":%s,"has-focus":%s,"is-native-fullscreen":%s}\n' \
+        "$1" "$p" "$2" "$3" "$4" "$5" "$6" "$full"
 }
 
 displays() {  # index of the active display
@@ -68,7 +70,8 @@ displays() {  # index of the active display
 reset() {
     : > "$STUB_ACTIONS"
     : > "$tmp/log"
-    export STUB_MODE=on
+    export STUB_MODE=on STUB_ACTIVE_SPACE=1
+    unset STUB_FAIL_SPACE
     displays 1 > "$STUB_DISPLAYS"
     unset YABAI_WINDOW_ID YABAI_PROCESS_ID
 }
@@ -168,6 +171,29 @@ for _ in $(seq 8000); do printf '1700000000 wid=1 space=1 action=padding\n'; don
 YABAI_WINDOW_ID=42 invoke
 lines=$(wc -l < "$tmp/log" | tr -d ' ')
 check 'rotation: bounded line count' 'yes' "$([[ "$lines" -le 210 ]] && echo yes || echo "no:${lines}")"
+
+# 13. A native fullscreen window cannot be focused by id: its Space is focused.
+reset
+printf '[%s]\n' "$(window 42 3 1 false false false 77 true)" > "$STUB_WINDOWS"
+YABAI_PROCESS_ID=77 invoke
+check 'pid fullscreen hidden: log' 'land land-ok' "$(logged)"
+check 'pid fullscreen hidden: cli action' '-m space --focus 3' "$(cat "$STUB_ACTIONS")"
+
+# 14. The fullscreen Space is already current: no false failure.
+reset
+printf '[%s]\n' "$(window 42 3 1 false false false 77 true)" > "$STUB_WINDOWS"
+export STUB_ACTIVE_SPACE=3
+YABAI_PROCESS_ID=77 invoke
+check 'pid fullscreen active: log' 'land skip-fullscreen-active' "$(logged)"
+check 'pid fullscreen active: no cli action' '' "$(cat "$STUB_ACTIONS")"
+
+# 15. A refused Space focus is a real failure.
+reset
+printf '[%s]\n' "$(window 42 3 1 false false false 77 true)" > "$STUB_WINDOWS"
+export STUB_FAIL_SPACE=1
+YABAI_PROCESS_ID=77 invoke
+check 'pid fullscreen refused: log' 'land land-failed' "$(logged)"
+check 'pid fullscreen refused: no recorded focus' '' "$(cat "$STUB_ACTIONS")"
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [[ "$fail" -eq 0 ]]
