@@ -376,6 +376,7 @@ git checkout ai-base
 - `window_focused` 的落位与显示器跟随都必须禁用：切 Space 或显示器后，它会收到“刚离开那一侧”的重上报，照做就会来回切（实测同 App 两窗口跨 Space 约 4 次/秒，Chrome 跨屏约 2 次/秒），并导致 `space --create` 后焦点回到老桌面。只有 `application_front_switched` 代表用户意图；`window_focused` 只记日志。点击窗口、同 App 切换、切显示器本身已由系统激活目标。
 - 显示器跟随只允许出现在 `application_front_switched` 路径：`window_focused` 在切换显示器后会收到另一块屏幕上同 App 窗口的重上报，跟着走会来回切（实测两块屏约 2 次/秒）；点击或同 App 窗口切换本身已激活所属显示器，不需要脚本代劳。
 - 系统升级后首次登录的 1–2 分钟内不要判定 yabai / SA 失效：daemon 可能刚启动且会话仍在恢复（日志出现 `XPC_ERROR_CONNECTION_INTERRUPTED`），事件源不可靠；用 `yabai -m query --windows | jq length` 判断是否真的在工作，不要以热键是否响应为准。
+- 原生全屏窗口（`is-native-fullscreen=true`，如 chiaki）只能 `yabai -m space --focus <space>`：`window --focus <id>` 会报 `could not locate window`。fast landing 脚本必须读该字段并走 Space；重复事件先比对当前 Space 再记 `skip-fullscreen-active`。判据是 `query --windows` 的字段，不是“看起来像不像全屏”。
 
 ### R23: 运行时配置不得阻塞事件循环（Enforced）
 

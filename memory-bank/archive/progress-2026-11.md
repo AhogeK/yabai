@@ -16,3 +16,15 @@
 - Removed jq/ioreg/perl; runtime deploy pending.
 ### Phase 60: config + signal architecture (2026-10-31)
 - `fast_window_switch` config + signal action; `on` writes auto-swoosh=false and restarts Dock; `off` restores true; Dock restart backgrounded to avoid event-loop wait.
+### Phase 52: standard-window visibility (2026-10-31)
+- AXDialog/floating windows were counted as visible; restrict to standard windows.
+### Phase 51: no-input skip (2026-10-31)
+- Moved gate to entry; no new keyboard/mouse/gesture after previous landing → skip without clearing state, preventing suppress/allow alternation.
+### Phase 50: gesture intent (2026-10-31)
+- Gesture-driven space switches lack key/mouse down; added gesture timestamp to intent.
+### Phase 49: HID idle (2026-10-31)
+- Hardware idle used to distinguish user input from synthesized events; later replaced by event counters, now any-input timestamp.
+### Phase 48: bounce guard false positive (2026-10-31)
+- 7.2.23 suppressed real switches after >1.5s; switched to user-input timestamp.
+### Phase 47: runaway loop (2026-10-31)
+- 2311 fast switches in one storm; added reverse-switch guard; later replaced by input-gated single-flight logic.

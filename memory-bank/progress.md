@@ -1,10 +1,17 @@
 # Progress - yabai
 
-## Current Phase: 7.2.44 — window_focused 退出动作路径（2026-11-08，未提交）
+## Current Phase: 7.2.45 — 原生全屏落位（2026-11-27，已发布）
+- **现象**：Cmd+Tab 切不到 chiaki（全屏应用），停在原桌面；其他 App 正常。
+- **根因**：chiaki 窗口 `is-native-fullscreen=true`，位于自己的 Space；`yabai -m window --focus 20178` 直接报 `could not locate window`，脚本记 `land-failed`。daemon 与权限无问题。
+- **修复**：脚本读 `is-native-fullscreen`；为真时改 `yabai -m space --focus <space>`；该 Space 已是当前（重复事件）则记 `skip-fullscreen-active` 而非失败。
+- **验证**：实机 `YABAI_PROCESS_ID=10775 ./app_fast_land.sh` → space 3 + front=chiaki，日志 `land-ok fullscreen=1`；重复触发 `skip-fullscreen-active`；环境已恢复 space 2 / 193。脚本测试 29/29。
+- **已提交**：ai-base `0c177e6`（功能）/ `cac8d57`（文档）/ `a1197bf`（版本）/ `d7099ca`（man）+ AI 单独提交；dev `6b552a5` / `f618ce2` / `9ef6969` / `5f72c7b`；master `81045dd` / `9dac429` / `171a7d7` / `3b3d42e`；三支已推送。
+
+## Current Phase: 7.2.44 — window_focused 退出动作路径（2026-11-08，已发布）
 - **根因**：切 Space 或显示器后，`window_focused` 会收到旧侧重上报；落位与 display 跟随都会成环（Chrome 两窗口跨屏约 2 次/秒），并让 `opt+shift+n` 落回老桌面窗口。
 - **修复**：脚本只对 `application_front_switched` 动作；`window_focused` 记 `skip-window-event` 后退出；删除落位状态与同 App 过滤。
 - **验证**：`space --create` + `window --space` + `space --focus` 连做 3 轮均落在新窗口；脚本测试 23/23。
-- **未提交**：等授权。
+- **已发布**：ai-base `37d070c` / `d7cebc7` / `6e1ca22` / `971aad3` / `3e97ce6`；dev `0add85d` / `f81440f` / `2d90f48`；master `cd306a0` / `88e80fd` / `5bca28e`；三支已推送且与 origin 一致。
 
 ## Current Phase: 7.2.43 — 来回落焦修复（2026-11-06，已发布）
 - **根因**：落位切 Space 后 App 重上报另一个窗口，`window_focused` 形成乒乓（IntelliJ 两个窗口两个 Space，约 4 次落位/秒）。
@@ -18,6 +25,8 @@
 - **验证**：`tests/script/fast_land_test.sh` 21/21；`make` 0 warning；`make -C tests all` 6/6；手动分支矩阵全过。
 - **审查后修正**：删除“已聚焦且可见即退出”分支（实测切换显示器后存在约 0.4s 的焦点归属滞后，会吞掉 display 跟随）。
 - **待验证**：真实 Cmd+Tab 按键。详见 `activeContext.md`。
+- **发布**：ai-base `0d8cce3`（功能）/ `b4da019`（文档）/ `81af1ca`（版本）/ `ea8b2b5`（AI）；dev `117f66d` / `6a29a57` / `9c960da` / `7cca140`；master `c4c1cbe` / `ec6482b` / `f08520e` / `26d5019`。
+- **顺带修复**：`7.2.21` 的 CHANGELOG 条目原本只在 ai-base（`9088d9c`），已用 `7cca140` / `26d5019` 补齐，三支 CHANGELOG 一致。
 
 ## Phase: Cmd+Tab 回归回退（2026-11-01）
 - **根因**：C `--fast-focus-window` 只认 signal wid / AX 焦点窗口；`application_front_switched` 在 AX 解析失败时不发 `window_focused`；auto-swoosh 已关 → 无路径切 desktop。
@@ -55,18 +64,7 @@
 - Removed pre-switch `SLSSpaceSetFrontPSN`; direct `space --focus` + wait + window raise is the valid order.
 ### Phase 53: target-only visibility (2026-10-31)
 - Only the selected target window determines whether to switch; other same-app windows/dialogs must not suppress landing.
-### Phase 52: standard-window visibility (2026-10-31)
-- AXDialog/floating windows were counted as visible; restrict to standard windows.
-### Phase 51: no-input skip (2026-10-31)
-- Moved gate to entry; no new keyboard/mouse/gesture after previous landing → skip without clearing state, preventing suppress/allow alternation.
-### Phase 50: gesture intent (2026-10-31)
-- Gesture-driven space switches lack key/mouse down; added gesture timestamp to intent.
-### Phase 49: HID idle (2026-10-31)
-- Hardware idle used to distinguish user input from synthesized events; later replaced by event counters, now any-input timestamp.
-### Phase 48: bounce guard false positive (2026-10-31)
-- 7.2.23 suppressed real switches after >1.5s; switched to user-input timestamp.
-### Phase 47: runaway loop (2026-10-31)
-- 2311 fast switches in one storm; added reverse-switch guard; later replaced by input-gated single-flight logic.
+- Phase 47–52 已归档：见 `archive/progress-2026-11.md`。
 
 ## Historical summary
 
@@ -87,8 +85,8 @@
 
 | File | Lines | Limit |
 |---|---:|---:|
-| activeContext.md | 61 | 150 |
-| progress.md | 86 | 100 |
+| activeContext.md | 70 | 150 |
+| progress.md | 90 | 100 |
 | systemPatterns.md | 63 | 80 |
 | techContext.md | 73 | 80 |
 | projectbrief.md | 22 | 50 |

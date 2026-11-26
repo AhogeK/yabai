@@ -1,21 +1,20 @@
 # Active Context - yabai
 
-## 当前工作焦点（2026-11-06）
+## 当前工作焦点（2026-11-27）
 
 - **7.2.42：普通 Cmd+Tab 回归已修复，fast landing 回到脚本实现**。C 版 `--fast-focus-window` 只认 signal wid / AX 焦点窗口；`application_front_switched` 在 AX 解析失败时不发 `window_focused`；叠加 `fast_window_switch on` 关掉 auto-swoosh → 没有任何路径切 desktop。源码逻辑回 7.2.41，版本 bump 到 7.2.42。
-- **当前实现**：`examples/app_fast_land.sh` 与 `~/.config/yabai/app_fast_land.sh`（同一文件，逐字节一致）；`application_front_switched`（pid）+ `window_focused`（wid）双 signal；目标解析 wid → pid → has-focus → first standard → first window。
-- **判定顺序**：最小化 → deminimize + 落位；可见且同 display → `skip-visible`；可见但异 display → `display --focus`（对已聚焦窗口同样执行）；隐藏 → `window --focus`。
+- **当前实现**：`examples/app_fast_land.sh` 与 `~/.config/yabai/app_fast_land.sh`（同一文件，逐字节一致）；只注册 `application_front_switched`（pid）；目标解析 has-focus → first standard → first window。
+- **判定顺序**：最小化 → deminimize + 落位；可见且同 display → `skip-visible`；可见但异 display → `display --focus`；隐藏 → `window --focus`；**原生全屏 → `space --focus`**（`window --focus` 对全屏窗口报 `could not locate window`），该 Space 已是当前则 `skip-fullscreen-active`。
 - **早退已移除（2026-11-06 实验）**：曾用“已聚焦且可见”提前退出省一次查询；实测切换显示器后约 0.4s 内 daemon 仍把旧显示器窗口报为焦点（6 次采样 1 次不一致，稳定态 6/6 一致），会吞掉 display 跟随，故删除该分支，代价约 +13ms。
-- **来回落焦修复（2026-11-06）**：落位切 Space 后，App 会把“它仍视为 key”的另一个窗口重新上报，`window_focused` 因此再次触发并落位，形成闭环（IntelliJ 两窗口两 Space，约 4 次/秒）。现在 `src=wid` 且「同一 pid、不同 wid、落位后 1 秒内」记 `skip-app-reassert` 并退出；`src=pid` 不过滤，保证快速 Cmd+Tab 不受影响。
+- **7.2.43 过渡方案（已被 7.2.44 取代）**：曾用「`src=wid` 且同一 pid、不同 wid、落位后 1 秒内」的 `skip-app-reassert` 过滤挡住来回落焦（IntelliJ 两 Space 约 4 次/秒）；7.2.44 起 `window_focused` 完全不动作，该过滤、状态文件与 `src=` 字段都已删除。
 - **7.2.43 已发布**：ai-base `bf5e3bb`（功能）/ `c8a18c1`（版本）；dev `97fff35` / `811067d`；master `6f45d08` / `d843b5c`；三支已推送且与 origin 一致。
 - **7.2.44：`window_focused` 不再参与任何动作（2026-11-08）**：切 Space 或显示器后它会收到“刚离开那一侧”的重上报，落位与 display 跟随都会成环（Chrome 跨屏约 2 次/秒），并让 `opt+shift+n` 有一定概率落回老桌面窗口。现在只有 `application_front_switched` 落位或跟随显示器；`window_focused` 仅记 `skip-window-event` 后退出。
 - **争抢处理**：单飞锁 30×20ms=600ms 上限并写 owner pid；日志超 256KB 保留最后 200 行（每次调用检查，覆盖 skip 路径）；每次调用只读一次时钟。
-- **测试**：`tests/script/fast_land_test.sh`（stub `yabai`）23/23，覆盖禁用、window 事件不动作、隐藏落位、最小化恢复、跨 display 跟随、pid 解析、锁占用、日志轮转；`make` 0 warning；`make -C tests all` 6/6。
+- **测试**：`tests/script/fast_land_test.sh`（stub `yabai`）29/29，覆盖禁用、window 事件不动作、隐藏落位、最小化恢复、跨 display 跟随、pid 解析、原生全屏落位、锁占用、日志轮转；`make` 0 warning；`make -C tests all` 6/6。
 - **开销实测**：重复事件 wid 40ms、pid 48ms（原 94/60ms）；落位 130–140ms。
-- **待验证**：真实 Cmd+Tab 与真实同 App IDEA 点击（需用户按键），状态只能标“待验证”。
-- **7.2.42 已发布**：ai-base `0d8cce3`（功能）/ `b4da019`（文档）/ `81af1ca`（版本）/ `ea8b2b5`（AI）；dev `117f66d` / `6a29a57` / `9c960da` / `7cca140`；master `c4c1cbe` / `ec6482b` / `f08520e` / `26d5019`；三支已推送且与 origin 一致。
-- **顺带修复**：`7.2.21` 的 CHANGELOG 条目从未进入 dev/master（只有 ai-base 的 `9088d9c` 带过），已用 `7cca140` / `26d5019` 补齐，现三支 CHANGELOG 完全一致。
-- **版本**：源码 7.2.42；机器上已装的二进制同为 7.2.42，但由已回退的 C 改动构建，需 `make deploy` 换成当前源码。
+- **待验证**：修复后真实 Cmd+Tab 切 chiaki（需用户按键复测）、真实同 App IDEA 点击。
+- **7.2.45：原生全屏目标只能 `space --focus`（2026-11-27，已发布）**：chiaki 全屏窗口 `is-native-fullscreen=true` 位于独立 Space，`window --focus <id>` 报 `could not locate window`（脚本因此 `land-failed`，Cmd+Tab 切不过去）。目标为全屏时改 `yabai -m space --focus <space>`，该 Space 已是当前则记 `skip-fullscreen-active`。实机：space 3 + front=chiaki，重复触发均 skip。ai-base `0c177e6`（功能）/ `cac8d57`（文档）/ `a1197bf`（版本）/ `d7099ca`（man）；dev `6b552a5` / `f618ce2` / `9ef6969` / `5f72c7b`；master `81045dd` / `9dac429` / `171a7d7` / `3b3d42e`；三支已推送。
+- **机器状态**：`~/.local/bin/yabai` 为 7.2.43，源码 7.2.45；7.2.44/7.2.45 无 C 改动，修复全在脚本，无需 `make deploy`。
 - 剩余延迟主要来自 signal 前 App 激活（144–316ms）；只有预激活接管 Cmd+Tab 才可能低于 200ms，属独立功能。
 
 ## macOS 27.2 支持（7.2.7–7.2.13，已验证）

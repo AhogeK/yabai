@@ -118,3 +118,14 @@ E [com.apple.windowmanagement:login] No visible space found for display: 37D8832
 **验证（2026-11-06）**：受控复现 17 行/2 秒（`35530` ↔ `35832`，pid 61040）；加过滤后同类事件只产生 1 行 `skip-app-reassert`，3 秒静置无新增。
 
 **后续（2026-11-08，7.2.44）**：最终处置是 `window_focused` 完全不参与动作——落位与 display 跟随都会成环（Chrome 两窗口跨屏约 2 次/秒），且会让 `space --create` 后焦点回到老桌面窗口。只保留 `application_front_switched` 动作，`window_focused` 仅记日志。
+
+## S14. Cmd+Tab 切不到原生全屏应用（macOS 27.2，已验证）
+
+**判断**：目标 App 的窗口 `is-native-fullscreen=true`（chiaki 实测 true），处在自己的 Space；`yabai -m window --focus <id>` 直接失败并输出 `could not locate window`，脚本记 `land-failed`，人停在原桌面。
+
+**动作**：
+1. 原生全屏目标只能走 `yabai -m space --focus <space>`；实测切过去后 `front=chiaki`，且全屏期间 `query --windows --window` 会报 `could not retrieve window details`（查询限制，不是失败）；
+2. 重复的 `application_front_switched` 会在该 Space 已当前时再次执行，`space --focus` 对当前 Space 返回失败——先比对 `query --spaces --space` 的 index，相同则记 `skip-fullscreen-active`；
+3. 排障时先看窗口的 `is-native-fullscreen` 字段，不要凭“看起来不像全屏”判断。
+
+**验证（2026-11-27）**：chiaki 10775 / wid 20178 / space 3；修复前 `window --focus 20178` rc=1 且落位失败，修复后 `space --focus 3` 落入并 `front=chiaki`，重复事件两次均 `skip-fullscreen-active`。
