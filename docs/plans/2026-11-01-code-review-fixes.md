@@ -1,6 +1,6 @@
 # Plan: Code-review fixes for fast window switch
 
-Date: 2026-11-01 · Status: in-progress; 7.2.41 build and 6/6 unit tests pass, runtime deploy pending
+Date: 2026-11-01 · Status: superseded by 7.2.42 — the reviewed C `window --fast-focus` path was reverted and fast landing returned to the script (`docs/plans/2026-11-27-native-fullscreen-landing.md`). The 7.2.41 off-recovery and tests shipped.
 
 ## Objective
 

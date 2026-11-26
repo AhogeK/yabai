@@ -6,6 +6,7 @@
 - **修复**：脚本读 `is-native-fullscreen`；为真时改 `yabai -m space --focus <space>`；该 Space 已是当前（重复事件）则记 `skip-fullscreen-active` 而非失败。
 - **验证**：实机 `YABAI_PROCESS_ID=10775 ./app_fast_land.sh` → space 3 + front=chiaki，日志 `land-ok fullscreen=1`；重复触发 `skip-fullscreen-active`；环境已恢复 space 2 / 193。脚本测试 29/29。
 - **已提交**：ai-base `0c177e6`（功能）/ `cac8d57`（文档）/ `a1197bf`（版本）/ `d7099ca`（man）+ AI 单独提交；dev `6b552a5` / `f618ce2` / `9ef6969` / `5f72c7b`；master `81045dd` / `9dac429` / `171a7d7` / `3b3d42e`；三支已推送。
+- **计划**：`docs/plans/2026-11-27-native-fullscreen-landing.md`（已完成）；C 路径计划 `2026-11-01-code-review-fixes.md` 标记为 superseded（7.2.42 回退）。
 
 ## Current Phase: 7.2.44 — window_focused 退出动作路径（2026-11-08，已发布）
 - **根因**：切 Space 或显示器后，`window_focused` 会收到旧侧重上报；落位与 display 跟随都会成环（Chrome 两窗口跨屏约 2 次/秒），并让 `opt+shift+n` 落回老桌面窗口。
