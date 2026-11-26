@@ -262,7 +262,7 @@ The Dock restart is asynchronous; wait for Dock to relaunch before expecting nat
 .br
 yabai stores this flag but does not switch spaces from the option itself; register the actions below to let them run.
 .br
-Recommended setup: copy \f(CRexamples/app_fast_land.sh\fP to \f(CR~/.config/yabai/app_fast_land.sh\fP and register it for \f(CRapplication_front_switched\fP only. The script lands only when the target window is hidden or minimized, and follows the owning display for a visible window on another display. Do not register \f(CRwindow_focused\fP: yabai raises it for focus changes nobody asked for, and acting on it makes focus bounce between windows.
+Recommended setup: copy \f(CRexamples/app_fast_land.sh\fP to \f(CR~/.config/yabai/app_fast_land.sh\fP and register it for \f(CRapplication_front_switched\fP only. The script lands only when the target window is hidden or minimized, follows the owning display for a visible window on another display, and focuses the Space of a native fullscreen window, which \f(CRwindow \-\-focus\fP cannot address. Do not register \f(CRwindow_focused\fP: yabai raises it for focus changes nobody asked for, and acting on it makes focus bounce between windows.
 .br
 Example: \f(CRyabai \-m signal \-\-add event=application_front_switched action="$HOME/.config/yabai/app_fast_land.sh" label=app\-fast\-land\fP
 .br
